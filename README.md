@@ -76,7 +76,7 @@ results = get_retrieval_probability_comparison(
     num_trials=100,
     num_mems=2_000,
     cue_level=1.0,          # or 0.5 for partial cues
-    filename='fig4A_retrieval',
+    filename='fig_4A_retrieval_accs',
     save_data=True,
     data_clustered=False,    # set to True if using structured, hierarchical patterns as input ("tree data")
     num_flips=None           # if using tree data, specify the bit flips parameter b
@@ -88,7 +88,7 @@ plot_acc_curves(
           (results['model2_out'], results['model2_pseudo_out'], results['model2_unif_pseudo_out'])],
     runsets=(runset1, runset2),
     max_age=1_000,    # maximum age of memory to show in figure
-    plot_title='Figure 4A',
+    plot_title='Fig 4A Retrieval Accuracy Curves',
     plot_xlabel='Memory Age',
     plot_ylabel='Retrieval Accuracy',
     figsize=(8, 5),
@@ -101,4 +101,84 @@ plot_acc_curves(
 
 ### Retrieval Sensitivity (d') Comparison
 
-The template code below shows how to generate a figure comparing the retrieval sensitivity across memory age, as measured by d', for a K-winner MHN and a parameter-matched Original MHN, using 100% / 50% cues. It can be used for both unstructured patterns and hierarchical, tree-generated patterns. This template code can be used to generate Fig. 4B, Fig. 5 and SI Appendix Figs. S1, S2, and S3.
+The template code below shows how to generate a figure comparing the retrieval sensitivity across memory age, as measured by d', for a K-winner MHN and a parameter-matched Original MHN, using 100% / 50% cues. It can be used for both unstructured patterns and hierarchical, tree-generated patterns. This template code can be used to generate Fig. 4B, Fig. 5 and SI Appendix Figs. S2 and S3.
+
+```bash
+
+from kwinner_samhn_comparison import run_comparison_test, plot_data
+
+# for conserving total parameter count, we require that n_h * f = n_h_MHN
+runset1 = (n_i, n_h, s, f, k, epsilon)      # K-winner MHN
+runset2 = (n_i, n_h_MHN, s, 1., 1, 1.)      # 1-winner (original) MHN
+
+results_dict = run_comparison_test(
+    runset1, runset2,
+    num_mems=2_000,
+    num_samples=10,
+    num_runs_per_sample=20,
+    cue_level=1.0,           # or 0.5 for 50% cues
+    data_clustered=False,    # specify as True if using structured, tree-generated patterns
+    num_flips=None,          # if using tree data, specify bit flips parameter b
+    save_data=True,
+    filename='fig_4B_dprimes'
+)
+
+kwinner_data = results_dict['kwinner_dprimes']
+mhn_data = results_dict['mhn_dprimes']
+
+plot_data(
+    kwinner_data,
+    mhn_data,
+    plot_title='Fig 4B d' Curves',
+    max_age=1_000,
+    plot_xlabel='100% Cues',    # adjust accordingly if plotting for 50% cues
+    plot_ylabel='d\'',
+    plot_rel_advantages=True
+)
+
+```
+
+### Comparison of Raw Difference (R.D.) Curves
+
+The template code below shows how to generate a figure comparing the raw difference (i.e. the difference between retrieval accuracy and baseline pseudo-pattern retrieval accuracy) across memory age, for a K-winner MHN and a parameter-matched Original MHN, using 100% / 50% cues. It can be computed for both unstructured patterns and hierarchical, tree-generated patterns. This template code can be used to generate SI Appendix Fig. S1.
+
+```bash
+
+from kwinner_samhn_comparison import run_comparison_test, plot_data
+
+# for conserving total parameter count, we require that n_h * f = n_h_MHN
+kwinner_runset = (n_i, n_h, s, f, k, epsilon)      # K-winner MHN
+mhn_runset = (n_i, n_h_MHN, s, 1., 1, 1.)      # 1-winner (original) MHN
+
+results_dict = run_comparison_test(
+    kwinner_runset, mhn_runset,
+    num_mems=2_000,
+    num_samples=10,
+    num_runs_per_sample=20,
+    cue_level=1.0,        # or 0.5, if using 50% cues
+    data_clustered=False,    # specify as True if using structured, tree-generated patterns
+    num_flips=None,          # if using tree data, specify bit flips parameter b
+    save_data=True,
+    filename='fig_S1_rawdiffs'
+)
+
+kwinner_data = results_dict['kwinner_rawdiffs']
+mhn_data = results_dict['mhn_rawdiffs']
+
+plot_data(
+    kwinner_data,
+    mhn_data,
+    plot_title='Fig S1 Raw Difference Curves',
+    max_age=1_000,
+    plot_xlabel='100% Cues',      # adjust accordingly if plotting for 50% cues
+    plot_ylabel='Raw Differences',
+    plot_rel_advantages=True,
+    plot_mode='log_y',            # set to 'log_y' if using log scale, else set to None
+    with_regression=True,         # plot regressed exponential decay curves to observed raw difference curves
+    regression_idxs=200,          # specify which memory ages are used for regression (e.g. ages 1-200)
+    mhn_runset=mhn_runset,        # specify the runset used for the MHN (so that the MHN theory/analytical R.D. curve can also be calculated)
+    cue_level=1.0                 # specify cue level used
+)
+
+```
+
