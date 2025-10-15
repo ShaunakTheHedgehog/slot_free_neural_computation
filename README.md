@@ -40,7 +40,17 @@ Ensure the following dependencies are available:
 
 Each model configuration (“runset”) is represented as a tuple:
 
+```bash
 runset = (n_i, n_h, s, f, k, epsilon)
+```
+
+where:
+- n_i – number of input units
+- n_h – number of hidden units
+- s – input sparsity (active bits per pattern)
+- f – fan-in scaling factor
+- k – number of active (winning) hidden units
+- epsilon – hidden-to-output scaling parameter
 
 
 
