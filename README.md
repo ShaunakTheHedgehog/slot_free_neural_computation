@@ -28,16 +28,19 @@ The functions provided here enable replication of the key retrieval and sensitiv
 ## Dependencies
 
 Ensure the following dependencies are available:
-```bash
-numpy
-matplotlib
-scipy
-scikit-learn
-pickle'''
 
----
+- numpy  
+- matplotlib  
+- scipy  
+- scikit-learn  
+- pickle  
+
 
 ## Parameter Conventions
+
+Each model configuration (“runset”) is represented as a tuple:
+
+runset = (n_i, n_h, s, f, k, epsilon)
 
 
 
