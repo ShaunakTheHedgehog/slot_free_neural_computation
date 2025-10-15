@@ -199,5 +199,6 @@ If you use or adapt this code, please cite the associated manuscript:
 For questions about code usage or reproducing results, please contact:
 
 Shaunak Bhandarkar -- shaunak@princeton.edu
+
 James McClelland -- jlmcc@stanford.edu
 
