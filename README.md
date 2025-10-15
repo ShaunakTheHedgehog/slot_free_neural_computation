@@ -182,3 +182,23 @@ plot_data(
 
 ```
 
+## Reproducibility Notes
+
+All results are averaged over multiple independent trials for statistical robustness. The number of runs (num_trials, num_samples, num_runs_per_sample) can be adjusted to trade off accuracy and compute time. 
+
+---
+
+## Citation
+
+If you use or adapt this code, please cite the associated manuscript:
+
+[TO-DO: ADD CITATION UPON PUTTING UP PREPRINT ON ARXIV / SUBMITTING TO A JOURNAL]
+
+
+## Contact
+
+For questions about code usage or reproducing results, please contact:
+
+Shaunak Bhandarkar -- shaunak@princeton.edu
+James McClelland -- jlmcc@stanford.edu
+
