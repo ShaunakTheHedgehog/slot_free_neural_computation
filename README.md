@@ -1,5 +1,5 @@
-# Neural Computation Without Slots: Steps Towards Biologically Plausible Memory and Attention in Natural and Artificial Intelligence
-Code used to run all simulations and generate all figures for the paper "Neural Computation Without Slots: Steps Towards Biologically Plausible Memory and Attention in Natural and Artificial Intelligence."
+# Neural Computation Without Slots
+This repository contains the code used to run all simulations and generate all figures for the paper "Neural Computation Without Slots: Steps Towards Biologically Plausible Memory and Attention in Natural and Artificial Intelligence."
 
 
 # K-winner Modern Hopfield Network (K-winner MHN)
