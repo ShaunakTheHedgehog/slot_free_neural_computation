@@ -3,7 +3,6 @@ This repository contains the code used to run all simulations and generate all f
 
 
 # K-winner Modern Hopfield Network (K-winner MHN)
-### Supplementary Code for “Slot-Free Neural Computation”
 
 This repository contains code for the *K-winner Modern Hopfield Network* (K-winner MHN), a distributed associative memory model developed as part of the broader notion of *slot-free neural computation*.  
 
