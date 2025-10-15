@@ -2,10 +2,11 @@
 Code used to run all simulations and generate all figures for the paper "Neural Computation Without Slots: Steps Towards Biologically Plausible Memory and Attention in Natural and Artificial Intelligence."
 
 
-# K-winner Modern Hopfield Network (K-MHN)
+# K-winner Modern Hopfield Network (K-winner MHN)
 ### Supplementary Code for “Slot-Free Neural Computation”
 
 This repository contains code for the *K-winner Modern Hopfield Network* (K-winner MHN), a distributed associative memory model developed as part of the broader *Slot-Free Neural Computation* framework.  
+
 The K-winner MHN extends the Modern Hopfield Network (MHN) framework by introducing a **k-winner-take-all rule** at the hidden layer, thereby enforcing sparse yet distributed neural representations, akin to real biological neural representations of memories. The K-winner MHN framework also allows for sparse network connnectivity and graded weight updates, altogether affording greater retention of older memories.
 
 The functions provided here enable replication of the key retrieval and sensitivity analyses in the accompanying research manuscript.
@@ -33,4 +34,6 @@ matplotlib
 scipy
 scikit-learn
 pickle
+
+
 
