@@ -60,7 +60,7 @@ Below are template scripts for regenerating the figures from the paper.
 All calls can be executed from within a Python environment after importing this module.
 
 
-# Retrieval Accuracy Across Memory Age
+### Retrieval Accuracy Across Memory Age
 
 The template code below shows how to generate a plot comparing the retrieval accuracy (across memory ages) for a K-winner MHN and a parameter-matched Original MHN, using 100% and 50% cues. This template code can be used to generate Fig. 4A and SI Appendix Fig. S2.
 
