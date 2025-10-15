@@ -60,7 +60,7 @@ Below are template scripts for regenerating the figures from the paper.
 All calls can be executed from within a Python environment after importing this module.
 
 
-Figure 4A — Retrieval Accuracy Across Memory Age
+Retrieval Accuracy Across Memory Age
 Comparison of retrieval accuracy for a K-winner MHN and a parameter-matched MHN, using 100% and 50% cues.
 
 ```bash
