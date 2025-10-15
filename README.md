@@ -61,7 +61,8 @@ All calls can be executed from within a Python environment after importing this 
 
 
 Retrieval Accuracy Across Memory Age
-Comparison of retrieval accuracy for a K-winner MHN and a parameter-matched MHN, using 100% and 50% cues.
+
+The template code below shows how to generate a plot comparing the retrieval accuracy (across memory ages) for a K-winner MHN and a parameter-matched Original MHN, using 100% and 50% cues. This template code can be used to generate Fig. 4A and SI Appendix Fig. S2.
 
 ```bash
 from kwinner_samhn_comparison import get_retrieval_probability_comparison, plot_acc_curves
