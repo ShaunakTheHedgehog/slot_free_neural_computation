@@ -62,7 +62,7 @@ All calls can be executed from within a Python environment after importing this 
 
 ### Retrieval Accuracy Across Memory Age
 
-The template code below shows how to generate a plot comparing the retrieval accuracy (across memory ages) for a K-winner MHN and a parameter-matched Original MHN, using 100% and 50% cues. This template code can be used to generate Fig. 4A and SI Appendix Fig. S2.
+The template code below shows how to generate a plot comparing the retrieval accuracy (across memory ages) for a K-winner MHN and a parameter-matched Original MHN, using 100% / 50% cues. It can be used for both unstructured patterns and hierarchical, tree-generated patterns. This template code can be used to generate Fig. 4A and SI Appendix Fig. S2.
 
 ```bash
 from kwinner_samhn_comparison import get_retrieval_probability_comparison, plot_acc_curves
@@ -97,3 +97,8 @@ plot_acc_curves(
 )
 
 ```
+
+
+### Retrieval Sensitivity (d') Comparison
+
+The template code below shows how to generate a figure comparing the retrieval sensitivity across memory age, as measured by d', for a K-winner MHN and a parameter-matched Original MHN, using 100% / 50% cues. It can be used for both unstructured patterns and hierarchical, tree-generated patterns. This template code can be used to generate Fig. 4B, Fig. 5 and SI Appendix Figs. S1, S2, and S3.
