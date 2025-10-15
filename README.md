@@ -9,7 +9,7 @@ This repository contains code for the *K-winner Modern Hopfield Network* (K-winn
 
 The K-winner MHN extends the Modern Hopfield Network (MHN) framework by introducing a **k-winner-take-all rule** at the hidden layer, thereby enforcing sparse yet distributed neural representations, akin to real biological neural representations of memories. The K-winner MHN framework also allows for sparse network connnectivity and graded weight updates, altogether affording greater retention of older memories.
 
-The functions provided here enable replication of the key retrieval and sensitivity analyses in the accompanying research manuscript.
+The functions provided here enable replication of the key retrieval and sensitivity analyses in the accompanying research manuscript. The main functions documented below can be found in the code file `kwinner_samhn_comparison.py`, and this code relies on the accompanying files `utils.py` and `kwinnernet.py`.
 
 ---
 
@@ -33,7 +33,11 @@ numpy
 matplotlib
 scipy
 scikit-learn
-pickle
+pickle'''
+
+---
+
+## Parameter Conventions
 
 
 
