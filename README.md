@@ -281,9 +281,6 @@ lr = 5e-3            # better to use 1e-3 for baseline Transformer
 K_lr = 1e-4          # using separate learning rate for W_K; set to None by default, and irrelevant if using baseline Transformer
 K_grad_type = 'supervised'             # train model by supervised query-key alignment; irrelevant if using baseline Transformer 
 WV_train_mode = 'via_reinstatement'    # use context item reinstatement during the query time step to train W_V; irrelevant if using baseline Transformer
-input_dim = 3 * num_letters
-output_dim = 2
-dataset_params = ['case_sequence', num_letters]
 manual_grad_calc = True    # could set this to 'False' especially for the baseline Transformer, which fully uses automatic differentiation
 
 # --- Initialize a simple MHN-Transformer model architecture ---
