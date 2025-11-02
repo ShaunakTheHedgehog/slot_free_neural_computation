@@ -243,42 +243,60 @@ The task requires the model to infer the case (uppercase/lowercase) of a queried
 
 ```python
 import torch
-from mhn_tf import OneWinnerMHNLayer, train_mhn_tf_model_batchmode
-from dataset import generate_case_sequences
+import matplotlib.pyplot as plt
+from utils import *
+from mhn_tf import OneWinnerMHNLayer, train_mhn_tf_model_batchmodefrom dataset import generate_case_sequences
 
 # --- Device setup ---
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # --- Define model parameters ---
-model = OneWinnerMHNLayer(
-    batch_size=64,
-    input_dim=78,      # corresponds to 3 * num_letters = 3 * 26
-    k_dim=16,
-    v_dim=2,
-    tf_dim=64,
-    softmax_beta=1.0,
-    debug_mode=False,
-    device=device
-).to(device)
+num_letters = 4
+full_seq_len = 5
+k_dim = 512
+tf_dim = 10
+debug_mode = True     # 'debug_mode = True' corresponds to having input projections
+criterion = mse_loss
+num_batches = 1_000
+batch_size = 16
+lr = 1e-2
+K_grad_type = 'supervised'             # train model by supervised query-key alignment
+WV_train_mode = 'via_reinstatement'    # use context item reinstatement during the query time step to train W_V
+input_dim = 3 * num_letters
+output_dim = 2
+dataset_params = ['case_sequence', num_letters]
 
-# --- Training parameters ---
-criterion = torch.nn.MSELoss()
-dataset_params = ['case_sequence', 26]   # dataset type + number of letters
+# --- Initialize a simple MHN-Transformer model architecture ---
+model = OneWinnerMHNLayer(batch_size, input_dim, k_dim, output_dim, tf_dim,
+                              debug_mode=debug_mode, device=device).to(device)
 
-# --- Train MHN-Transformer model ---
-train_mhn_tf_model_batchmode(
-    model,
-    full_seq_len=4,          # sequence length before query
-    dataset_params=dataset_params,
-    criterion=criterion,
-    num_batches=2000,        # total training steps
-    batch_size=64,
-    lr=1e-3,
-    manual_grad_calc=True,
-    device=device,
-)
+# --- Train the model on a small version of the case sequence task, using manually computed gradients (instead of automatic gradients) ---
+Q_losses, K_losses, V_losses, accs, wv, ul_cov, qk_submat = train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
+                             num_batches=num_batches, batch_size=batch_size, lr=lr,
+                             freeze_K=False, freeze_Q=False, freeze_V=False,
+                             manual_grad_calc=True, plot_mode=True, full_key_covar=True,
+                             device=device, K_grad_type=K_grad_type, WV_train_mode=WV_train_mode)
 
-# After training, metrics and learned matrices are saved in './results/'.
+# --- Visualize accuracy and loss curves from training ---
+plt.figure()
+plt.plot(accs)
+plt.xlabel('Batch')
+plt.ylabel('Training Accuracy')
+plt.title('Training Accuracy across Batches')
+plt.show()
+
+plt.figure()
+plt.plot(Q_losses, label='Q Loss')
+plt.plot(K_losses, label='K Loss')
+plt.plot(V_losses, label='V Loss')
+plt.xlabel('Batch')
+plt.ylabel('Loss')
+plt.title('Q, K, V Losses across Batches')
+plt.legend()
+plt.show()
+
+# Visualize the learned query, key, value weights and associated covariance matrices
+_, _ = visualize_QKV_matrices(model, 'MHN-tf', label='Final Learned Weights', plot_mode=True, W_V_lims=[-0.2, 1.2, 0.2], QK_lims=[-2, 5, 1])
 ```
 
 
