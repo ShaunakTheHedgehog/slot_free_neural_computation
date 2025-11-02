@@ -393,5 +393,5 @@ For questions about code usage or reproducing results, please contact:
 
 Shaunak Bhandarkar -- shaunak@princeton.edu
 
-James McClelland -- jlmcc@stanford.edu
+Dr. James L. McClelland -- jlmcc@stanford.edu
 
