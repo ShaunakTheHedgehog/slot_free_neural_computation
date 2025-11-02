@@ -242,8 +242,7 @@ Ensure the following dependencies are available:
 
 - numpy  
 - matplotlib  
-- scipy  
-- scikit-learn  
+- torch 
 - pickle  
 
 ---
