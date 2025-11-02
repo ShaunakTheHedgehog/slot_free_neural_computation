@@ -204,6 +204,38 @@ The functions provided here enable replication of the key retrieval and sensitiv
 
 ---
 
+---
+
+### Core Classes and Functions
+
+#### `OneWinnerMHN`
+A batch-parallel implementation of the MHN that allows for loading key/value pairs into memory and later performing softmax-based retrieval using a query:
+- `forward(x_c, x_q, context_input)`  
+  Runs the contextual key/value storage and query-based retrieval phases.
+- `__context_forward_step` / `__query_forward_step`  
+  Internal routines implementing storage and recall, respectively.
+- `reinst_context_forward(x_K_reinst)`  
+  Does a forward pass through the MHN using a reinstated key representation.
+
+#### `OneWinnerMHNLayer`
+Wraps the MHN into a Transformer-like layer that:
+- Projects each input token through different layers of weights to obtain embedded key, value, and/or query representations.
+- Loads each set of {input token, key, value} into the MHN during the context window, and subsequently retrieves a softmax-weighted value and reinstated input vector for the query item.
+
+#### Training Pipelines
+- `train_mhn_tf_model_batchmode`  
+  Training routine for any instantiation of the MHN-Transformer, allowing for various approaches to training the weights \( W_Q, W_K, W_V \). Generally, \( W_Q )\ and \( W_V )\ are trained via a simple backpropagation procedure (but without any backpropagation of information through time), and approaches to training \( W_K )\ vary, as discussed in our paper.
+  Supports multiple modes:
+  - `K_grad_type ∈ {‘version_1’ (training W_K via MHN), ‘supervised’ (training W_K via supervised query-key alignment), ‘Hebbian’ (training W_K via a Hebbian update)}`
+  - `WV_train_mode ∈ {‘via_reinstatement’ (training W_V using reinstated context item; default), ‘via_MHN_output’ (using the MHN output value to train W_V via a delta rule calculation)}`
+
+- `train_mhn_tf_model_batchmode_fixedK`  
+  A modified training routine to handle the MHN-Transformer variant in which the key weights \( W_K \) are kept frozen (to their values at initialization).
+
+- `run_case_sequence_model_sweep`  
+  Performs multi-trial training runs of any given MHN-Transformer variant (`'tf'` (baseline model), `'mhn_tf_fixed_WK'` (Fixed W_K MHN-Transformer), `'mhn_tf_V1'` (MHN-Transformer with learnable W_K)), collecting accuracy, loss, and covariance statistics for the query, key, and value weights.
+
+---
 
 
 ## Citation
