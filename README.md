@@ -254,7 +254,7 @@ These scripts can be executed from within a Python environment.
 
 ### **Example 1 — Training a Single MHN-Transformer on the Case-Sequence Task**
 
-This example trains a standalone **OneWinnerMHNLayer** (an MHN-based Transformer block) on the case-sequence prediction task.  
+This example describes how to train a standalone OneWinnerMHNLayer (a MHN-based Transformer block) on the case-sequence prediction task.  
 The task requires the model to infer the case (uppercase/lowercase) of a queried letter within a short sequence.
 
 ```python
@@ -331,6 +331,7 @@ _, _ = visualize_QKV_matrices(model, model_type, label='Final Learned Weights', 
 
 ### Example 2 - Performing a Multi-trial Model Sweep
 
+This example describes how to perform multiple training runs of a MHN-Transformer model; here, we specifically focus on the case of training an MHN-Transformer by supervised query-key alignment, though the specific training method can easily be modified. The task is the case sequence task, as before.
 
 ```python
 import torch
@@ -344,19 +345,19 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # --- Define sweep parameters ---
 ntrials = 10
-model_type = 'mhn_tf_V1'
+model_type = 'mhn_tf_V1'    # 'tf' if baseline Transformer; 'mhn_tf_fixed_WK' if MHN-Transformer with frozen W_K
 num_letters = 4
 full_seq_len = 5
 k_dim = 50
-tf_dim = 16
-debug_mode = True
+tf_dim = 16           # number of MHN hidden neurons; irrelevant if using baseline Transformer
+debug_mode = True     # 'debug_mode = True' corresponds to having input projections; irrelevant if using baseline Transformer
 criterion = mse_loss
 num_batches = 5_000
 batch_size = 64
-lr = 5e-3
-K_lr = 1e-4
-K_grad_type = 'supervised'
-WV_train_mode = 'via_reinstatement'
+lr = 5e-3            # better to use 1e-3 for baseline Transformer
+K_lr = 1e-4          # using separate learning rate for W_K; set to None by default, and irrelevant if using baseline Transformer
+K_grad_type = 'supervised'            # train model by supervised query-key alignment; 'version_1' if training W_K via MHN, 'none' if not training W_K or if using baseline Transformer model
+WV_train_mode = 'via_reinstatement'   # irrelevant if using baseline Transformer model
 final_window = 500        # calculate final accuracy statistics by averaging over the final 'final_window' number of iterations of training
 save_dir = '[INSERT PATH NAME]/'
 
