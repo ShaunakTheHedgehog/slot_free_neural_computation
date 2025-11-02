@@ -1,9 +1,9 @@
 # Neural Computation Without Slots
 This repository contains the code used to run all simulations and generate all figures for the paper "Neural Computation Without Slots: Steps Towards Biologically Plausible Memory and Attention in Natural and Artificial Intelligence." Inspired by the Modern Hopfield Network (MHN) framework from Krotov & Hopfield (2020), this project consists of 2 core components:
 
-1. Designing a slot-free sparse yet *distributed* connectionist memory model, enabling memories to be represented by a distributed set of memory neurons, with each memory neuron possibly becoming activated across multiple different memories.
+1. Designing a slot-free sparse yet *distributed* connectionist memory model, enabling memories to be represented by a distributed set of memory neurons, with each memory neuron becoming activated across multiple different memories.
 
-2. Designing and training slot-free, connection weight-based instantiations of a "minimal" Transformer architecture in a way that avoids needing to actively maintain arbitrararily long temporal sequences of prior states in order to perform credit assignment.
+2. Designing and training slot-free, connection weight-based instantiations of a "minimal" Transformer architecture in a way that avoids active maintainence of arbitrararily long temporal sequences of prior states in order to perform credit assignment.
 
 Ultimately, both of these components constitute steps towards understanding how *biologically plausible mechanisms* can support computations that have enabled AI systems to capture human-like abilities that no prior models have been able to achieve.
 
