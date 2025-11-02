@@ -282,6 +282,9 @@ K_lr = 1e-4          # using separate learning rate for W_K; set to None by defa
 K_grad_type = 'supervised'             # train model by supervised query-key alignment; irrelevant if using baseline Transformer 
 WV_train_mode = 'via_reinstatement'    # use context item reinstatement during the query time step to train W_V; irrelevant if using baseline Transformer
 manual_grad_calc = True    # could set this to 'False' especially for the baseline Transformer, which fully uses automatic differentiation
+input_dim = 3 * num_letters
+output_dim = 2
+dataset_params = ['case_sequence', num_letters]
 
 # --- Initialize a simple MHN-Transformer model architecture ---
 model = OneWinnerMHNLayer(batch_size, input_dim, k_dim, output_dim, tf_dim,
@@ -355,9 +358,6 @@ K_lr = 1e-4
 K_grad_type = 'supervised'
 WV_train_mode = 'via_reinstatement'
 final_window = 500        # calculate final accuracy statistics by averaging over the final 'final_window' number of iterations of training
-input_dim = 3 * num_letters
-output_dim = 2
-dataset_params = ['case_sequence', num_letters]
 save_dir = '[INSERT PATH NAME]/'
 
 # --- Run sweep ---
