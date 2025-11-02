@@ -341,4 +341,58 @@ class NestedTreeNode:
         data_matrix = np.vstack((data_matrix, child.get_clustered_data()))
 
     return data_matrix
+
+
+def visualize_data_similarity_structure(data, num_active, num_flips=None):
+  '''
+  Arguments:
+  data        :    Dataset consisting of unstructured or structured patterns (shape: 'num_examples' x 'length')
+  num_active  :    Number of '1' bits in each pattern in the dataset
+  num_flips   :    Number of bit flips at each level of the TGCRP process, if using structured patterns (default: None)
+
+  Given a dataset of patterns, visualizes (1) the correlation matrix of (normalized) dot products between each pair of patterns 
+  and (2) a probability density plot across all of these normalized dot products, in order to illustrate the mean and standard
+  deviation of the overall data similarity structure.
+  '''
+  
+  s_i = num_active
+  
+  plt.figure()
+  covar = (1./s_i) * data @ data.T
+  print(np.mean(covar), np.std(covar))
+  im = plt.imshow(covar, vmin=0, vmax=1)
+  print(covar.shape)
+  
+  plt.tick_params(axis='both', labelsize=19)
+  
+  cbar = plt.colorbar(im, ticks=np.arange(0.0, 1.01, 0.2))
+  cbar.ax.tick_params(labelsize=17)
+  
+  labels = np.arange(0, len(covar) + 1, 500)
+  
+  plt.xticks(ticks=np.arange(0, len(covar) + 1, 500), labels=labels)
+  plt.yticks(ticks=np.arange(0, len(covar)+1, 500), labels=labels)
+
+  if num_flips is None:
+    plt.title('Covariance for Unstructured Data', fontsize=21)
+  else:
+    plt.title(f'Covariance for Structured Data with b={num_flips}', fontsize=21)
+  
+  shuffle_inds = np.arange(data.shape[0])
+  np.random.shuffle(shuffle_inds)
+  print(shuffle_inds)
+  data = data[shuffle_inds.tolist()]
+  
+  pairwise_sims = covar[np.triu_indices(data.shape[0])]
+  
+  mean_sim = np.mean(pairwise_sims)
+  std_sim = np.std(pairwise_sims)
+  print('\n Mean and Std Sim: ')
+  print(mean_sim)
+  print(std_sim)
+  
+  plt.figure()
+  plt.tick_params(axis='both', labelsize=18)
+  plt.hist(pairwise_sims, bins=40, range=(0., 1.), density=True)
+  plt.axvline(mean_sim, color='red', lw=2.5, linestyle='dashed')
   
