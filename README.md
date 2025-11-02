@@ -3,12 +3,12 @@ This repository contains the code used to run all simulations and generate all f
 
 1. Designing a slot-free sparse yet *distributed* connectionist memory model, enabling memories to be represented by a distributed set of memory neurons, with each memory neuron possibly becoming activated across multiple different memories.
 
-2. Designing and training slot-free, connection-weight-based instantiations of a "minimal" Transformer architecture in a way that avoids needing to actively maintain arbitrararily long temporal sequences of prior states in order to perform credit assignment.
+2. Designing and training slot-free, connection weight-based instantiations of a "minimal" Transformer architecture in a way that avoids needing to actively maintain arbitrararily long temporal sequences of prior states in order to perform credit assignment.
 
 Ultimately, both of these components constitute steps towards understanding how *biologically plausible mechanisms* can support computations that have enabled AI systems to capture human-like abilities that no prior models have been able to achieve.
 
 
-# K-winner Modern Hopfield Network (K-winner MHN)
+# A Slot-free, Sparse, Distributed Memory Model: The K-winner Modern Hopfield Network
 
 This repository contains code for the *K-winner Modern Hopfield Network* (K-winner MHN), a distributed associative memory model developed as part of the broader notion of *slot-free neural computation*.  
 
@@ -192,6 +192,19 @@ plot_data(
 All results are averaged over multiple independent trials for statistical robustness. The number of runs (num_trials, num_samples, num_runs_per_sample) can be adjusted to trade off accuracy and compute time. 
 
 ---
+
+
+# A Slot-free, Connection Weight-based Implementation of the Transformer
+
+This repository contains code for our *MHN-Transformer* models, which constitute biologically plausible variants of a minimal Transformer architecture and form part of the broader notion of *slot-free neural computation*.  
+
+Our MHN-Transformer models utilize the Modern Hopfield Network (MHN) framework by incorporating a *hetero-associative MHN* "memory module" that reproduces the standard transformer self-attention mechanism. We also augment this MHN architecture with "item reinstatement" weights that allows for the reinstatement of best-matching context items when processing a query element. In our paper, we describe several variants of our connection weight-based transformer system that enables the learning of weights that encode representations of past inputs, in order to enhance their utilization for processing inputs at later times.
+
+The functions provided here enable replication of the key retrieval and sensitivity analyses in the accompanying research manuscript. The main functions documented below can be found in the code files `mhn_tf.py` (for our MHN-based Transformer models), `baseline_tf.py` (for the baseline minimal Transformer architecture), and `dataset.py` (for implementing a canonical in-context learning task), and this code relies on the accompanying file `utils.py`.
+
+---
+
+
 
 ## Citation
 
