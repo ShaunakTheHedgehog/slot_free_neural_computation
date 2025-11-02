@@ -204,7 +204,6 @@ The functions provided here enable replication of the key retrieval and sensitiv
 
 ---
 
----
 
 ### Core Classes and Functions
 
@@ -236,6 +235,51 @@ Wraps the MHN into a Transformer-like layer that:
   Performs multi-trial training runs of any given MHN-Transformer variant (`'tf'` (baseline model), `'mhn_tf_fixed_WK'` (Fixed W_K MHN-Transformer), `'mhn_tf_V1'` (MHN-Transformer with learnable W_K)), collecting accuracy, loss, and covariance statistics for the query, key, and value weights.
 
 ---
+
+### **Example 1 — Training a Single MHN-Transformer on the Case-Sequence Task**
+
+This example trains a standalone **OneWinnerMHNLayer** (an MHN-based Transformer block) on the case-sequence prediction task.  
+The task requires the model to infer the case (uppercase/lowercase) of a queried letter within a short sequence.
+
+```python
+import torch
+from mhn_tf import OneWinnerMHNLayer, train_mhn_tf_model_batchmode
+from dataset import generate_case_sequences
+
+# --- Device setup ---
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# --- Define model parameters ---
+model = OneWinnerMHNLayer(
+    batch_size=64,
+    input_dim=78,      # corresponds to 3 * num_letters = 3 * 26
+    k_dim=16,
+    v_dim=2,
+    tf_dim=64,
+    softmax_beta=1.0,
+    debug_mode=False,
+    device=device
+).to(device)
+
+# --- Training parameters ---
+criterion = torch.nn.MSELoss()
+dataset_params = ['case_sequence', 26]   # dataset type + number of letters
+
+# --- Train MHN-Transformer model ---
+train_mhn_tf_model_batchmode(
+    model,
+    full_seq_len=4,          # sequence length before query
+    dataset_params=dataset_params,
+    criterion=criterion,
+    num_batches=2000,        # total training steps
+    batch_size=64,
+    lr=1e-3,
+    manual_grad_calc=True,
+    device=device,
+)
+
+# After training, metrics and learned matrices are saved in './results/'.
+```
 
 
 ## Citation
