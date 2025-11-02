@@ -198,7 +198,7 @@ All results are averaged over multiple independent trials for statistical robust
 
 This repository contains code for our *MHN-Transformer* models, which constitute biologically plausible variants of a minimal Transformer architecture and form part of the broader notion of *slot-free neural computation*.  
 
-Our MHN-Transformer models utilize the Modern Hopfield Network (MHN) framework by incorporating a *hetero-associative MHN* "memory module" that reproduces the standard transformer self-attention mechanism. We also augment this MHN architecture with "item reinstatement" weights that allows for the reinstatement of best-matching context items when processing a query element. In our paper, we describe several variants of our connection weight-based transformer system that enables the learning of weights that encode representations of past inputs, in order to enhance their utilization for processing inputs at later times.
+Our MHN-Transformer models utilize the Modern Hopfield Network (MHN) framework by incorporating a *hetero-associative MHN* "memory module" that reproduces the standard transformer self-attention mechanism. We also augment this MHN architecture with "item reinstatement" weights that allows for the reinstatement of best-matching context items when processing a query element. In our paper, we describe several variants of our connection weight-based transformer system that enables the learning of weights that encode representations of past inputs, in order to enhance their utilization for processing inputs at later times. By encoding representations of past inputs within connection weights, rather than actively maintaining them (for arbitrarily long context windows) as activation vectors of keys and values, and by performing credit assignment (i.e. backpropagation of gradient signals) using only current state and weight information (rather than information from explicitly stored slots for keys and values), our models approach the functionality of a minimal "slot-based" Transformer while retaining a greater degree of biological plausiblity. In turn, our models suggest potential mechanisms by which the human mind may be able to perform memory-based in-context learning tasks.
 
 The functions provided here enable replication of the key retrieval and sensitivity analyses in the accompanying research manuscript. The main functions documented below can be found in the code files `mhn_tf.py` (for our MHN-based Transformer models), `baseline_tf.py` (for the baseline minimal Transformer architecture), and `dataset.py` (for implementing a canonical in-context learning task), and this code relies on the accompanying file `utils.py`.
 
@@ -207,8 +207,13 @@ The functions provided here enable replication of the key retrieval and sensitiv
 
 ### Core Classes and Functions
 
+#### `SimplifiedTransformerLayer`
+A standard, batch-parallelized implementation of a "minimal" (baseline) Transformer architecture that only consists of the self-attention mechanism.
+- `forward(self, x, attn_type)`
+  Applies the self-attention mechanism on a batch of input sequences, using a particular attention mask (e.g. causal, independent).
+
 #### `OneWinnerMHN`
-A batch-parallel implementation of the MHN that allows for loading key/value pairs into memory and later performing softmax-based retrieval using a query:
+A batch-parallelized implementation of the MHN that allows for loading key/value pairs into memory and later performing softmax-based retrieval using a query:
 - `forward(x_c, x_q, context_input)`  
   Runs the contextual key/value storage and query-based retrieval phases.
 - `__context_forward_step` / `__query_forward_step`  
@@ -223,13 +228,16 @@ Wraps the MHN into a Transformer-like layer that:
 
 #### Training Pipelines
 - `train_mhn_tf_model_batchmode`  
-  Training routine for any instantiation of the MHN-Transformer, allowing for various approaches to training the weights \( W_Q, W_K, W_V \). Generally, \( W_Q )\ and \( W_V )\ are trained via a simple backpropagation procedure (but without any backpropagation of information through time), and approaches to training \( W_K )\ vary, as discussed in our paper.
+  Batch-parallelized training routine for any instantiation of the MHN-Transformer, allowing for various approaches to training the weights \( W_Q, W_K, W_V \). Generally, \( W_Q )\ and \( W_V )\ are trained via a simple backpropagation procedure (but without any backpropagation of information through time), and approaches to training \( W_K )\ vary, as discussed in our paper.
   Supports multiple modes:
   - `K_grad_type ∈ {‘version_1’ (training W_K via MHN), ‘supervised’ (training W_K via supervised query-key alignment), ‘Hebbian’ (training W_K via a Hebbian update)}`
   - `WV_train_mode ∈ {‘via_reinstatement’ (training W_V using reinstated context item; default), ‘via_MHN_output’ (using the MHN output value to train W_V via a delta rule calculation)}`
 
 - `train_mhn_tf_model_batchmode_fixedK`  
-  A modified training routine to handle the MHN-Transformer variant in which the key weights \( W_K \) are kept frozen (to their values at initialization).
+  A modified batch-parallelized training routine to handle the MHN-Transformer variant in which the key weights \( W_K \) are kept frozen (to their values at initialization).
+
+- `train_tf_model_batchmode`
+  Batch-parallelized training routine for the baseline "minimal" Transformer model.
 
 - `run_case_sequence_model_sweep`  
   Performs multi-trial training runs of any given MHN-Transformer variant (`'tf'` (baseline model), `'mhn_tf_fixed_WK'` (Fixed W_K MHN-Transformer), `'mhn_tf_V1'` (MHN-Transformer with learnable W_K)), collecting accuracy, loss, and covariance statistics for the query, key, and value weights.
@@ -242,7 +250,9 @@ Ensure the following dependencies are available:
 
 - numpy  
 - matplotlib  
-- torch 
+- torch
+- einops
+- tqdm
 - pickle  
 
 ---
