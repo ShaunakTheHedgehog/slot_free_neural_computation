@@ -3,7 +3,7 @@ This repository contains the code used to run all simulations and generate all f
 
 1. Designing a slot-free sparse yet *distributed* connectionist memory model, enabling memories to be represented by a distributed set of memory neurons, with each memory neuron becoming activated across multiple different memories.
 
-2. Designing and training slot-free, connection weight-based instantiations of a "minimal" Transformer architecture in a way that avoids active maintainence of arbitrararily long temporal sequences of prior states in order to perform credit assignment.
+2. Designing and training slot-free, connection weight-based instantiations of a "minimal" Transformer architecture in a way that avoids the active maintainence of arbitrararily long temporal sequences of prior states in order to perform credit assignment.
 
 Ultimately, both of these components constitute steps towards understanding how *biologically plausible mechanisms* can support computations that have enabled AI systems to capture human-like abilities that no prior models have been able to achieve.
 
