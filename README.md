@@ -236,6 +236,18 @@ Wraps the MHN into a Transformer-like layer that:
 
 ---
 
+## Dependencies
+
+Ensure the following dependencies are available:
+
+- numpy  
+- matplotlib  
+- scipy  
+- scikit-learn  
+- pickle  
+
+---
+
 ## Reproducing Our Results
 
 Below are two sample scripts that document how to train our MHN-Transformer models (as well as the baseline Transformer). The first documents how to train a sample MHN-Transformer on the case sequence task; this kind of routine may be used to generate SI Appendix Figs. S8, S9, S11, and S12. The second example documents how to conduct a systematic multi-trial training sweep for a given model; this routine can be used to generate Fig. 8 of the main text and SI Appendix Fig. S10.
