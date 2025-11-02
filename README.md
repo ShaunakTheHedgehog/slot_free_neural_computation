@@ -236,6 +236,11 @@ Wraps the MHN into a Transformer-like layer that:
 
 ---
 
+## Reproducing Our Results
+
+Below are two sample scripts that document how to train our MHN-Transformer models (as well as the baseline Transformer). The first documents how to train a sample MHN-Transformer on the case sequence task; this kind of routine may be used to generate SI Appendix Figs. S8, S9, S11, and S12. The second example documents how to conduct a systematic multi-trial training sweep for a given model; this routine can be used to generate Fig. 8 of the main text and SI Appendix Fig. S10.
+These scripts can be executed from within a Python environment.
+
 ### **Example 1 — Training a Single MHN-Transformer on the Case-Sequence Task**
 
 This example trains a standalone **OneWinnerMHNLayer** (an MHN-based Transformer block) on the case-sequence prediction task.  
@@ -253,29 +258,46 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # --- Define model parameters ---
 num_letters = 4
 full_seq_len = 5
-k_dim = 512
-tf_dim = 10
-debug_mode = True     # 'debug_mode = True' corresponds to having input projections
+k_dim = 50    # used 10 for the baseline Transformer
+
+model_type = 'mhn_tf'    # if baseline Transformer, use 'tf'
+tf_dim = 10           # number of MHN hidden neurons; irrelevant if using baseline Transformer
+debug_mode = True     # 'debug_mode = True' corresponds to having input projections; irrelevant if using baseline Transformer
 criterion = mse_loss
-num_batches = 1_000
-batch_size = 16
-lr = 1e-2
-K_grad_type = 'supervised'             # train model by supervised query-key alignment
-WV_train_mode = 'via_reinstatement'    # use context item reinstatement during the query time step to train W_V
+num_batches = 5_000
+batch_size = 64
+lr = 5e-3            # better to use 1e-3 for baseline Transformer
+K_lr = 1e-4          # using separate learning rate for W_K; set to None by default, and irrelevant if using baseline Transformer
+K_grad_type = 'supervised'             # train model by supervised query-key alignment; irrelevant if using baseline Transformer 
+WV_train_mode = 'via_reinstatement'    # use context item reinstatement during the query time step to train W_V; irrelevant if using baseline Transformer
 input_dim = 3 * num_letters
 output_dim = 2
 dataset_params = ['case_sequence', num_letters]
+manual_grad_calc = True    # could set this to 'False' especially for the baseline Transformer, which fully uses automatic differentiation
 
 # --- Initialize a simple MHN-Transformer model architecture ---
 model = OneWinnerMHNLayer(batch_size, input_dim, k_dim, output_dim, tf_dim,
                               debug_mode=debug_mode, device=device).to(device)
 
+# if using baseline "minimal" Transformer, use the following line of code instead:
+# model = SimplifiedTransformerLayer(input_dim, k_dim, 1, output_dim).to(device)
+
+
 # --- Train the model on a small version of the case sequence task, using manually computed gradients (instead of automatic gradients) ---
-Q_losses, K_losses, V_losses, accs, wv, ul_cov, qk_submat = train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
-                             num_batches=num_batches, batch_size=batch_size, lr=lr,
+Q_losses, K_losses, V_losses, batch_accs, wv, ul_cov, qk_submat = train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
+                             num_batches=num_batches, batch_size=batch_size, lr=lr, K_lr=1e-4,
                              freeze_K=False, freeze_Q=False, freeze_V=False,
-                             manual_grad_calc=True, plot_mode=True, full_key_covar=True,
+                             manual_grad_calc=manual_grad_calc, plot_mode=True, full_key_covar=True,
                              device=device, K_grad_type=K_grad_type, WV_train_mode=WV_train_mode)
+batch_losses = Q_losses
+
+# if using baseline "minimal" Transformer, use the following code instead:
+# model = SimplifiedTransformerLayer(input_dim, k_dim, n_heads=1, output_dim=output_dim)
+
+# batch_losses, batch_accs, wv, ul_cov, qk_submat = train_tf_batchmode(model, full_seq_len, dataset_params, criterion,
+#                    num_batches=num_batches, batch_size=batch_size, lr=lr,
+#                    freeze_K=False, freeze_Q=False, freeze_V=False, manual_grad_calc=manual_grad_calc,
+#                    device=device, plot_mode=False)
 
 # --- Visualize accuracy and loss curves from training ---
 plt.figure()
@@ -286,17 +308,56 @@ plt.title('Training Accuracy across Batches')
 plt.show()
 
 plt.figure()
-plt.plot(Q_losses, label='Q Loss')
-plt.plot(K_losses, label='K Loss')
-plt.plot(V_losses, label='V Loss')
+plt.plot(batch_losses)
 plt.xlabel('Batch')
 plt.ylabel('Loss')
-plt.title('Q, K, V Losses across Batches')
-plt.legend()
+plt.title('Training Loss across Iterations of Training')
 plt.show()
 
 # Visualize the learned query, key, value weights and associated covariance matrices
-_, _ = visualize_QKV_matrices(model, 'MHN-tf', label='Final Learned Weights', plot_mode=True, W_V_lims=[-0.2, 1.2, 0.2], QK_lims=[-2, 5, 1])
+_, _ = visualize_QKV_matrices(model, model_type, label='Final Learned Weights', plot_mode=True, W_V_lims=[-0.2, 1.2, 0.2], QK_lims=[-2, 5, 1])
+```
+
+### Example 2 - Performing a Multi-trial Model Sweep
+
+
+```python
+import torch
+import matplotlib.pyplot as plt
+from utils import *
+from mhn_tf import run_case_sequence_model_sweep
+from dataset import generate_case_sequences
+
+# --- Device setup ---
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+# --- Define sweep parameters ---
+ntrials = 10
+model_type = 'mhn_tf_V1'
+num_letters = 4
+full_seq_len = 5
+k_dim = 50
+tf_dim = 16
+debug_mode = True
+criterion = mse_loss
+num_batches = 5_000
+batch_size = 64
+lr = 5e-3
+K_lr = 1e-4
+K_grad_type = 'supervised'
+WV_train_mode = 'via_reinstatement'
+final_window = 500        # calculate final accuracy statistics by averaging over the final 'final_window' number of iterations of training
+input_dim = 3 * num_letters
+output_dim = 2
+dataset_params = ['case_sequence', num_letters]
+save_dir = '[INSERT PATH NAME]/'
+
+# --- Run sweep ---
+results_dict, all_accs, all_losses, covar_stats_dict, mean_covar_stats_dict = run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len, k_dim, tf_dim,
+                                                                                                            debug_mode, criterion, num_batches, batch_size, lr, manual_grad_calc=True,
+                                                                                                            K_lr=K_lr, K_grad_type=K_grad_type, final_window=final_window, device=device, 
+                                                                                                            save_dir=save_dir, WV_train_mode=WV_train_mode)
+
 ```
 
 
