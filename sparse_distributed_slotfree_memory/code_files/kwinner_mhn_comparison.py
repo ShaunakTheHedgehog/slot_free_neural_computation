@@ -745,6 +745,8 @@ def run_analysis():
     two_runsets = args.runset2 is not None
     save_data = True
 
+    print(f'Running {args.analysis} analysis with data type {args.data_type} and cue level {args.cue_level}...')
+
     if args.data_type == 'correlated':
         assert args.num_mems % args.num_categories == 0, "num_mems must be divisible by num_categories for correlated data"
     if args.data_type != 'random':
