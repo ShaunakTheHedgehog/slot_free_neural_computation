@@ -2,7 +2,8 @@ import numpy as np
 import sys
 import random
 import matplotlib.pyplot as plt
-from utils import generateData, shuffleData, NestedTreeNode
+from utils import shuffleData
+from data import generateData, NestedTreeNode
 from kwinnernet import KWinnerNet
 from sklearn.linear_model import LinearRegression
 import pickle as pkl
