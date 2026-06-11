@@ -1,0 +1,21 @@
+# Conda environment for the slot-free MHN-Transformer experiments.
+# These experiments are PyTorch-based and can use a GPU if one is available
+# (the code falls back to CPU automatically via torch.cuda.is_available()).
+#
+# Create with:   conda env create -f environment.yml
+# Activate with: conda activate slotfree-mhn-tf
+#
+# Note: this installs the default (CPU/GPU-agnostic) PyTorch build from conda-forge.
+# For a CUDA-specific build, follow the instructions at https://pytorch.org/get-started/locally/
+# (e.g. add the `pytorch` and `nvidia` channels and a `pytorch-cuda` package).
+name: slotfree-mhn-tf
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy
+  - matplotlib
+  - pytorch
+  - einops
+  - tqdm
+  # pickle, functools, math, random, itertools, copy, warnings are part of the Python standard library

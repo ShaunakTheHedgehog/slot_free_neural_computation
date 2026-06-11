@@ -1,0 +1,17 @@
+# Conda environment for the sparse, distributed, slot-free memory (K-winner MHN) experiments.
+# These experiments are pure CPU / NumPy and have no deep-learning dependencies, which makes
+# this the environment to use for the d' tests on the Della CPU cluster.
+#
+# Create with:   conda env create -f environment.yml
+# Activate with: conda activate slotfree-memory
+name: slotfree-memory
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy
+  - scipy
+  - scikit-learn
+  - pandas
+  - matplotlib
+  # pickle, csv, itertools, copy, random, sys, os are part of the Python standard library

@@ -202,14 +202,14 @@ def run_comparison_test(runset1, runset2, num_mems, num_samples, num_runs_per_sa
 
 
     for i in range(num_samples):
-        out_matches, pseudo_out_matches, d_out, out_diff = get_match_probabilities(runset=runset1, num_trials=num_runs_per_sample, num_mems=num_mems, cue_level=cue_level, in_steady_state=True, data_clustered=data_clustered, num_flips=num_flips)
+        out_matches, pseudo_out_matches, d_out, out_diff, _ = get_match_probabilities(runset=runset1, num_trials=num_runs_per_sample, num_mems=num_mems, cue_level=cue_level, in_steady_state=True, data_clustered=data_clustered, num_flips=num_flips)
         k_winner_dprimes[i] = d_out
         kwinner_rawdiffs[i] = out_diff
         kwin_accs[i] = out_matches
         kwin_pseudo_accs[i] = pseudo_out_matches[:-1]
         
         if two_runsets:
-            samhn_out_matches, samhn_pseudo_out_matches, samhn_d_out, samhn_out_diff = get_match_probabilities(runset=runset2, num_trials=num_runs_per_sample, num_mems=num_mems, cue_level=cue_level, in_steady_state=True, data_clustered=data_clustered, num_flips=num_flips)
+            samhn_out_matches, samhn_pseudo_out_matches, samhn_d_out, samhn_out_diff, _ = get_match_probabilities(runset=runset2, num_trials=num_runs_per_sample, num_mems=num_mems, cue_level=cue_level, in_steady_state=True, data_clustered=data_clustered, num_flips=num_flips)
             samhn_dprimes[i] = samhn_d_out
             d_prime_measurements[i] = d_out - samhn_d_out
             samhn_rawdiffs[i] = samhn_out_diff
@@ -648,7 +648,7 @@ def main():
 
 
     # Run the test to generate d' / raw difference curve statistics
-    res_dict = run_comparison_test(new_scaledup_kwin_runset, scaledup_mhn_runset, num_mems, num_samples=num_samples, num_runs_per_sample=num_runs_per_sample, cue_level=cue_level, data_clustered=data_clustered, num_flips=num_flips, cnn_data=None, save_data=True, filename=filename, two_runsets=False)
+    res_dict = run_comparison_test(new_scaledup_kwin_runset, scaledup_mhn_runset, num_mems, num_samples=num_samples, num_runs_per_sample=num_runs_per_sample, cue_level=cue_level, data_clustered=data_clustered, num_flips=num_flips, save_data=True, filename=filename, two_runsets=False)
 
     with open(full_filename, 'rb') as file:
         results_dict = pkl.load(file)
