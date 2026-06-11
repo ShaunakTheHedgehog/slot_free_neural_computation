@@ -1,13 +1,15 @@
 import numpy as np
 import sys
 import random
+import argparse
 import matplotlib.pyplot as plt
 from utils import shuffleData
-from data import generateData, NestedTreeNode
+from data import generateData, NestedTreeNode, generate_specific_dataset
 from kwinnernet import KWinnerNet
 from sklearn.linear_model import LinearRegression
 import pickle as pkl
 from scipy.stats import t
+from globals import *
 
 
 '''
@@ -29,14 +31,20 @@ nonlinearity_type       :       the type of nonlinearity used at the hidden stat
 
 Returns a dictionary with all of the retrieval accuracy data for both runsets, on both the real patterns and untrained pseudo-patterns.
 '''
-def get_retrieval_probability_comparison(runset1, runset2, num_trials, num_mems, cue_level, save_data=True, filename='retrieval_acc_comparison', two_runsets=True,
-                                         data_clustered=False, num_flips=None, uniform_baseline=False, nonlinearity_type='hard_k'):
+def get_retrieval_probability_comparison(runset1, runset2, num_trials, num_mems, cue_level, num_burn_in=NUM_BURN_IN, save_data=True, filename='retrieval_acc_comparison', two_runsets=True,
+                                         data_type='random', num_flips=None, num_categories=10, uniform_baseline=False, nonlinearity_type='hard_k'):
     assert nonlinearity_type in ['hard_k', 'random']
-    out_matches_mean_1, pseudo_out_matches_mean_1, _, _, unif_results_1 = get_match_probabilities(runset1, num_trials, num_mems, cue_level, in_steady_state=True, data_clustered=data_clustered, num_flips=num_flips, uniform_baseline=uniform_baseline, nonlinearity_type=nonlinearity_type)
+    data_clustered = (data_type != 'random')
+    
+    out_matches_mean_1, pseudo_out_matches_mean_1, _, _, unif_results_1 = get_match_probabilities(runset1, num_trials, num_mems, cue_level, in_steady_state=True, num_burn_in=num_burn_in,
+                                                                                                  data_type=data_type, num_flips=num_flips, num_categories=num_categories,
+                                                                                                  uniform_baseline=uniform_baseline, nonlinearity_type=nonlinearity_type)
     
     out_matches_mean_2, pseudo_out_matches_mean_2, unif_results_2 = None, None, None 
     if two_runsets:
-        out_matches_mean_2, pseudo_out_matches_mean_2, _, _, unif_results_2 = get_match_probabilities(runset2, num_trials, num_mems, cue_level, in_steady_state=True, data_clustered=data_clustered, num_flips=num_flips, uniform_baseline=uniform_baseline, nonlinearity_type=nonlinearity_type)
+        out_matches_mean_2, pseudo_out_matches_mean_2, _, _, unif_results_2 = get_match_probabilities(runset2, num_trials, num_mems, cue_level, in_steady_state=True, num_burn_in=num_burn_in,
+                                                                                                      data_type=data_type, num_flips=num_flips, num_categories=num_categories, 
+                                                                                                      uniform_baseline=uniform_baseline, nonlinearity_type=nonlinearity_type)
 
     output_dict = {'model1_out' : out_matches_mean_1, 'model1_pseudo_out' : pseudo_out_matches_mean_1,
                    'model2_out' : out_matches_mean_2, 'model2_pseudo_out' : pseudo_out_matches_mean_2,
@@ -82,11 +90,16 @@ d_prime_out                 :       the trial-averaged d' across memory age
 out_diff                    :       the trial-averaged raw differences across memory age
 unif_results                :       a dictionary of similarly trial-averaged measurements for uniform random pseudo-patterns, if needed
 '''
-def get_match_probabilities(runset, num_trials, num_mems, cue_level, in_steady_state=True, data_clustered=False, num_flips=None, uniform_baseline=False, nonlinearity_type='hard_k'):
+def get_match_probabilities(runset, num_trials, num_mems, cue_level, in_steady_state=True, num_burn_in=NUM_BURN_IN,
+                            data_type='random', num_flips=None, num_categories=10, 
+                            uniform_baseline=False, nonlinearity_type='hard_k'):
     assert nonlinearity_type in ['hard_k', 'random']
+    data_clustered = (data_type != 'random')
     (n_i, n_h, s, f, k, epsilon) = runset
+    length = n_i
+    num_active = s
     out_matches = np.zeros((num_trials, num_mems))
-    pseudo_out_matches = np.zeros((num_trials, num_mems +1))
+    pseudo_out_matches = np.zeros((num_trials, num_mems))
     unif_pseudo_out_matches = np.zeros((num_trials, num_mems))
 
 
@@ -96,18 +109,20 @@ def get_match_probabilities(runset, num_trials, num_mems, cue_level, in_steady_s
         net = KWinnerNet(n_i, n_h, 1. * s /n_i, f, k, epsilon, nonlinearity_type=nonlinearity_type)
 
         # generate dataset of patterns, whether structured or random
-        full_data = None
-        if data_clustered:
-            num_data = 7 * num_mems
-            tree = NestedTreeNode(pattern_input_size=n_i, pattern_sparsity=1.*s/n_i, num_flips=num_flips)
-            full_data = tree.get_clustered_data(num_data=num_data)
-        else:
-            full_data = generateData(3 * num_mems + 1, n_i, s)
+        # full_data = None
+        # if data_clustered:
+        #     num_data = 7 * num_mems
+        #     tree = NestedTreeNode(pattern_input_size=n_i, pattern_sparsity=1.*s/n_i, num_flips=num_flips)
+        #     full_data = tree.get_clustered_data(num_data=num_data)
+        # else:
+        #     full_data = generateData(3 * num_mems + 1, n_i, s)
 
-        full_data = shuffleData(full_data)
-        steady_state_data = full_data[:num_mems]
-        data = full_data[num_mems:2 * num_mems]
-        pseudodata = full_data[2 * num_mems:3 * num_mems + 1]
+        # full_data = shuffleData(full_data)
+        # steady_state_data = full_data[:num_mems]
+        # data = full_data[num_mems:2 * num_mems]
+        # pseudodata = full_data[2 * num_mems:3 * num_mems + 1]
+        steady_state_data, data, pseudodata = generate_specific_dataset(length, num_active, data_type, num_flips, num_categories,
+                                                                        num_burn_in=num_burn_in, num_eval=num_mems)
 
         if data_clustered and uniform_baseline is True:
             unif_pseudodata = generateData(num_mems, n_i, s)
@@ -117,10 +132,6 @@ def get_match_probabilities(runset, num_trials, num_mems, cue_level, in_steady_s
             _, _ = net.learn_patterns(steady_state_data)
 
         out_learned = np.zeros((num_mems, n_i))
-        # pseudo_out_learned = np.zeros((num_mems + 1, n_i))
-        # unif_pseudo_out_learned = np.zeros((num_mems, n_i))
-
-        out = net.retrieve(pseudodata[0].reshape((-1, 1)))
 
         # perform learning step for all memories, one-by-one
         for j in range(num_mems):
@@ -128,12 +139,6 @@ def get_match_probabilities(runset, num_trials, num_mems, cue_level, in_steady_s
             out = net.retrieve(data[j].reshape((-1, 1)))
             out_learned[j] = out.reshape(-1)
 
-            # out = net.retrieve(pseudodata[j + 1].reshape((-1, 1)))
-            # pseudo_out_learned[j + 1] = out.reshape(-1)
-
-            # if data_clustered and uniform_baseline is True:
-            #     out = net.retrieve(unif_pseudodata[j].reshape((-1, 1)))
-            #     unif_pseudo_out_learned[j] = out.reshape(-1)
 
         # evaluate output pattern completion abilities for both real and pseudo data 
         _, out_retrieve = net.retrieve_from_partial_cues(data, cue_level)  
@@ -162,8 +167,8 @@ def get_match_probabilities(runset, num_trials, num_mems, cue_level, in_steady_s
                     'out_diff' : unif_out_diff, 'dprime_out' : unif_d_prime_out}
 
     # calculate raw differences and d prime sample
-    out_diff = out_matches_mean - pseudo_out_matches_mean[:-1]
-    out_std = np.std(out_matches - pseudo_out_matches[:, :-1], axis=0)
+    out_diff = out_matches_mean - pseudo_out_matches_mean
+    out_std = np.std(out_matches - pseudo_out_matches, axis=0)
     d_prime_out = out_diff / out_std
 
     return out_matches_mean, pseudo_out_matches_mean, d_prime_out, out_diff, unif_results
@@ -186,46 +191,69 @@ two_runsets             :       whether two runsets are being compared, or if ju
 
 Returns a dictionary of the relevant d' and raw difference information across both model types.
 '''
-def run_comparison_test(runset1, runset2, num_mems, num_samples, num_runs_per_sample, cue_level, data_clustered=False, 
-                        num_flips=None, save_data=True, filename='kwinner_mhn_comparison_results', two_runsets=True):
+def run_comparison_test(runset1, runset2, num_mems, num_samples, num_runs_per_sample, cue_level, num_burn_in=NUM_BURN_IN, data_type='random', 
+                        num_flips=None, num_categories=10, uniform_baseline=False, save_data=True, filename='kwinner_mhn_comparison_results', two_runsets=True):
+    data_clustered = (data_type != 'random')
     k_winner_dprimes = np.zeros((num_samples, num_mems))
-    samhn_dprimes = np.zeros((num_samples, num_mems))
-    d_prime_measurements = np.zeros((num_samples, num_mems))
+    mhn_dprimes = np.zeros((num_samples, num_mems))
 
     kwinner_rawdiffs = np.zeros((num_samples, num_mems))
-    samhn_rawdiffs = np.zeros((num_samples, num_mems))
+    mhn_rawdiffs = np.zeros((num_samples, num_mems))
 
     kwin_accs = np.zeros((num_samples, num_mems))
     kwin_pseudo_accs = np.zeros_like(kwin_accs)
     mhn_accs = np.zeros((num_samples, num_mems))
     mhn_pseudo_accs = np.zeros_like(mhn_accs)
 
+    # d' / raw differences measured against the uniform (unstructured) pseudo-pattern baseline;
+    # only populated/saved when uniform_baseline is True (which itself requires clustered data)
+    kwin_unif_dprimes = np.zeros((num_samples, num_mems))
+    mhn_unif_dprimes = np.zeros((num_samples, num_mems))
+    kwin_unif_rawdiffs = np.zeros((num_samples, num_mems))
+    mhn_unif_rawdiffs = np.zeros((num_samples, num_mems))
+
 
     for i in range(num_samples):
-        out_matches, pseudo_out_matches, d_out, out_diff, _ = get_match_probabilities(runset=runset1, num_trials=num_runs_per_sample, num_mems=num_mems, cue_level=cue_level, in_steady_state=True, data_clustered=data_clustered, num_flips=num_flips)
+        out_matches, pseudo_out_matches, d_out, out_diff, unif_res = get_match_probabilities(runset1, num_runs_per_sample, num_mems, cue_level, in_steady_state=True, num_burn_in=num_burn_in,
+                                                                                      data_type=data_type, num_flips=num_flips, num_categories=num_categories,
+                                                                                      uniform_baseline=uniform_baseline)
+        # get_match_probabilities(runset=runset1, num_trials=num_runs_per_sample, num_mems=num_mems, cue_level=cue_level, in_steady_state=True,
+        #                                                                               data_clustered=data_clustered, num_flips=num_flips)
         k_winner_dprimes[i] = d_out
         kwinner_rawdiffs[i] = out_diff
         kwin_accs[i] = out_matches
-        kwin_pseudo_accs[i] = pseudo_out_matches[:-1]
-        
+        kwin_pseudo_accs[i] = pseudo_out_matches
+        if uniform_baseline:
+            kwin_unif_dprimes[i] = unif_res['dprime_out']
+            kwin_unif_rawdiffs[i] = unif_res['out_diff']
+
         if two_runsets:
-            samhn_out_matches, samhn_pseudo_out_matches, samhn_d_out, samhn_out_diff, _ = get_match_probabilities(runset=runset2, num_trials=num_runs_per_sample, num_mems=num_mems, cue_level=cue_level, in_steady_state=True, data_clustered=data_clustered, num_flips=num_flips)
-            samhn_dprimes[i] = samhn_d_out
-            d_prime_measurements[i] = d_out - samhn_d_out
-            samhn_rawdiffs[i] = samhn_out_diff
-            mhn_accs[i] = samhn_out_matches
-            mhn_pseudo_accs[i] = samhn_pseudo_out_matches[:-1]        
-        
+            mhn_out_matches, mhn_pseudo_out_matches, mhn_d_out, mhn_out_diff, mhn_unif_res = get_match_probabilities(runset2, num_runs_per_sample, num_mems, cue_level, in_steady_state=True, num_burn_in=num_burn_in,
+                                                                                      data_type=data_type, num_flips=num_flips, num_categories=num_categories,
+                                                                                      uniform_baseline=uniform_baseline)
+            # get_match_probabilities(runset=runset2, num_trials=num_runs_per_sample, num_mems=num_mems, cue_level=cue_level, in_steady_state=True, data_clustered=data_clustered, num_flips=num_flips)
+            mhn_dprimes[i] = mhn_d_out
+            mhn_rawdiffs[i] = mhn_out_diff
+            mhn_accs[i] = mhn_out_matches
+            mhn_pseudo_accs[i] = mhn_pseudo_out_matches
+            if uniform_baseline:
+                mhn_unif_dprimes[i] = mhn_unif_res['dprime_out']
+                mhn_unif_rawdiffs[i] = mhn_unif_res['out_diff']
+
 
         print("Iter " + str(i+1) + ' of ' + str(num_samples) + ' done')
 
 
-    results_dict = {'kwinner_dprimes' : k_winner_dprimes, 'mhn_dprimes' : samhn_dprimes,
-                    'kwinner_rawdiffs' : kwinner_rawdiffs, 'mhn_rawdiffs' : samhn_rawdiffs,
-                    'dprime_difference' : d_prime_measurements,
-                    'kwin_out_accs': kwin_accs, 'kwin_pseudo_out_accs': kwin_pseudo_accs, 
+    results_dict = {'kwinner_dprimes' : k_winner_dprimes, 'mhn_dprimes' : mhn_dprimes,
+                    'kwinner_rawdiffs' : kwinner_rawdiffs, 'mhn_rawdiffs' : mhn_rawdiffs,
+                    'kwin_out_accs': kwin_accs, 'kwin_pseudo_out_accs': kwin_pseudo_accs,
                     'mhn_out_accs': mhn_accs, 'mhn_pseudo_out_accs': mhn_pseudo_accs}
-    
+
+    # d' / raw differences relative to the uniform pseudo-pattern baseline (clustered data only)
+    if uniform_baseline:
+        results_dict.update({'kwinner_unif_dprimes' : kwin_unif_dprimes, 'mhn_unif_dprimes' : mhn_unif_dprimes,
+                             'kwinner_unif_rawdiffs' : kwin_unif_rawdiffs, 'mhn_unif_rawdiffs' : mhn_unif_rawdiffs})
+
     if save_data:
         full_filename = f'{filename}.pkl'
         with open(full_filename, 'wb') as file:
@@ -709,7 +737,138 @@ def main():
 
 
 
+# parse a runset string of the form 'n_i,n_h,s,f,k,epsilon' into a runset tuple
+def _parse_runset(text):
+    p = text.split(',')
+    if len(p) != 6:
+        raise argparse.ArgumentTypeError("runset must be 'n_i,n_h,s,f,k,epsilon'")
+    return (int(p[0]), int(p[1]), int(p[2]), float(p[3]), int(p[4]), float(p[5]))
+
+
+'''
+Command-line entry point for running an analysis routine. Selects between the raw retrieval accuracy
+analysis (get_retrieval_probability_comparison) and the d' / raw difference analysis (run_comparison_test)
+via the --analysis argument, builds the runset(s) from the command line, and saves the resulting .pkl.
+Intended to streamline cluster (e.g. Slurm) runs, where each job differs only by its arguments.
+
+Example:
+    python kwinner_samhn_comparison.py run --analysis dprime --data_type correlated \
+        --runset1 1000,1000,100,0.1,50,0.3 --runset2 1000,100,100,1.0,1,1.0 \
+        --num_flips 30 --num_categories 10 --num_mems 1000 --num_samples 10 --num_runs_per_sample 20 \
+        --uniform_baseline --filename my_dprime_run
+'''
+def run_analysis():
+    ap = argparse.ArgumentParser(description="Run a K-winner MHN analysis (retrieval accuracy or d'/raw-diff).")
+    ap.add_argument('--analysis', choices=['retrieval', 'dprime'], required=True,
+                    help='which routine to run')
+    ap.add_argument('--runset1', type=_parse_runset, required=True,
+                    help="K-winner MHN runset as 'n_i,n_h,s,f,k,epsilon'")
+    ap.add_argument('--runset2', type=_parse_runset, default=None,
+                    help='second runset (e.g. 1-winner MHN); omit for a single-model run')
+    ap.add_argument('--data_type', choices=['random', 'correlated', 'tree'], default='random')
+    ap.add_argument('--cue_level', type=float, default=1.0)
+    ap.add_argument('--num_mems', type=int, default=NUM_EVAL,
+                    help='number of recent patterns learned and evaluated per trial')
+    ap.add_argument('--num_burn_in', type=int, default=NUM_BURN_IN,
+                    help='number of burn-in patterns presented before evaluation')
+    ap.add_argument('--num_flips', type=int, default=None,
+                    help='bit flips for correlated/tree data (required for those types)')
+    ap.add_argument('--num_categories', type=int, default=10,
+                    help='number of categories for correlated data')
+    ap.add_argument('--num_trials', type=int, default=100,
+                    help='[retrieval] number of trials to average over')
+    ap.add_argument('--num_samples', type=int, default=10,
+                    help="[dprime] number of d'/raw-diff samples to generate")
+    ap.add_argument('--num_runs_per_sample', type=int, default=20,
+                    help='[dprime] number of trials per sample')
+    ap.add_argument('--uniform_baseline', action='store_true',
+                    help='also evaluate an unstructured uniform pseudo-pattern baseline (clustered data)')
+    ap.add_argument('--nonlinearity_type', choices=['hard_k', 'random'], default='hard_k',
+                    help='hidden-layer rule (note: only affects the retrieval analysis)')
+    ap.add_argument('--filename', type=str, default=None,
+                    help='output filename (without .pkl); a descriptive default is used if omitted')
+    ap.add_argument('--no_save', action='store_true', help='do not write the results .pkl')
+    args = ap.parse_args()
+
+    two_runsets = args.runset2 is not None
+    save_data = not args.no_save
+
+    if args.data_type == 'correlated':
+        assert args.num_mems % args.num_categories == 0, "num_mems must be divisible by num_categories for correlated data"
+    if args.data_type != 'random':
+        assert args.num_flips is not None, "num_flips must be specified for correlated/tree data"
+
+    if args.analysis == 'retrieval':
+        filename = args.filename or f'retrieval_{args.data_type}_cue{args.cue_level}_nummems{args.num_mems}_flips{args.num_flips}'
+        return get_retrieval_probability_comparison(
+            args.runset1, args.runset2, args.num_trials, args.num_mems, args.cue_level,
+            num_burn_in=args.num_burn_in, save_data=save_data, filename=filename, two_runsets=two_runsets,
+            data_type=args.data_type, num_flips=args.num_flips, num_categories=args.num_categories,
+            uniform_baseline=args.uniform_baseline, nonlinearity_type=args.nonlinearity_type)
+
+    filename = args.filename or f'dprime_{args.data_type}_cue{args.cue_level}_nummems{args.num_mems}_samples{args.num_samples}_runs{args.num_runs_per_sample}_flips{args.num_flips}'
+    return run_comparison_test(
+        args.runset1, args.runset2, args.num_mems, args.num_samples, args.num_runs_per_sample, args.cue_level,
+        num_burn_in=args.num_burn_in, data_type=args.data_type, num_flips=args.num_flips,
+        num_categories=args.num_categories, uniform_baseline=args.uniform_baseline,
+        save_data=save_data, filename=filename, two_runsets=two_runsets)
+
+
+'''
+Command-line entry point for plotting a previously saved analysis. Loads a results .pkl and plots it with
+plot_data (d' / raw difference, for the 'dprime' analysis) or plot_acc_curves (retrieval accuracy curves,
+for the 'retrieval' analysis).
+
+Example:
+    python kwinner_samhn_comparison.py plot --analysis dprime --results_file my_dprime_run \
+        --plot_quantity dprime --plot_title my_dprime_plot.png
+'''
+def plot_analysis():
+    ap = argparse.ArgumentParser(description='Plot results from a saved analysis .pkl.')
+    ap.add_argument('--analysis', choices=['retrieval', 'dprime'], required=True)
+    ap.add_argument('--results_file', type=str, required=True,
+                    help='path to the results .pkl (with or without the .pkl extension)')
+    ap.add_argument('--runset1', type=_parse_runset, default=None,
+                    help='[retrieval] K-winner runset, used for the plot legend/labels')
+    ap.add_argument('--runset2', type=_parse_runset, default=None,
+                    help="[retrieval] second runset; [dprime] passed as the theoretical MHN runset")
+    ap.add_argument('--plot_quantity', choices=['dprime', 'rawdiff'], default='dprime',
+                    help='[dprime] which quantity to plot')
+    ap.add_argument('--plot_title', type=str, default=None)
+    ap.add_argument('--max_age', type=int, default=1000)
+    ap.add_argument('--cue_level', type=float, default=1.0)
+    ap.add_argument('--uniform_baseline', action='store_true',
+                    help='[retrieval] also draw the uniform pseudo-pattern baseline')
+    args = ap.parse_args()
+
+    path = args.results_file if args.results_file.endswith('.pkl') else f'{args.results_file}.pkl'
+    with open(path, 'rb') as fh:
+        results = pkl.load(fh)
+
+    if args.analysis == 'dprime':
+        if args.plot_quantity == 'rawdiff':
+            kkey, mkey, ylabel = 'kwinner_rawdiffs', 'mhn_rawdiffs', 'Raw Difference'
+        else:
+            kkey, mkey, ylabel = 'kwinner_dprimes', 'mhn_dprimes', "d'"
+        title = args.plot_title or f'{args.plot_quantity}_plot.png'
+        plot_data(results[kkey], results[mkey], title, max_age=args.max_age,
+                  plot_ylabel=ylabel, cue_level=args.cue_level, mhn_runset=args.runset2, figsize=(8, 5))
+    else:
+        data = [(results['model1_out'], results['model1_pseudo_out'], results['model1_unif_pseudo_out']),
+                (results['model2_out'], results['model2_pseudo_out'], results['model2_unif_pseudo_out'])]
+        title = args.plot_title or 'retrieval_acc_plot'
+        plot_acc_curves(data, (args.runset1, args.runset2), title, max_age=args.max_age,
+                        uniform_baseline=args.uniform_baseline, figsize=(8, 5))
+
+
 if __name__ == "__main__":
-    # main()
-    # run_random_data_test()
-    run_tree_data_test()
+    # dispatch to the run/plot CLI; a leading 'run' or 'plot' token selects the entry point
+    # (defaults to 'run'). The original template routines (main, run_random_data_test,
+    # run_tree_data_test) remain available to call directly.
+    cmd = sys.argv[1] if len(sys.argv) > 1 else 'run'
+    if cmd in ('run', 'plot'):
+        sys.argv.pop(1)
+    if cmd == 'plot':
+        plot_analysis()
+    else:
+        run_analysis()

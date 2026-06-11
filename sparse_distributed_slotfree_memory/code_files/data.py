@@ -1,7 +1,7 @@
 import numpy as np
 import random
 from utils import bit_flipped, shuffleData
-from globals import NUM_TRAIN, NUM_TEST, TOT_NUM_PATTERNS
+from globals import NUM_BURN_IN, NUM_EVAL, TOT_NUM_PATTERNS
 
 '''
 Generate a dataset of binary patterns, all with the same sparsity level
@@ -76,10 +76,10 @@ burn_in_data    :     NUM_TRAIN burn-in patterns (shape NUM_TRAIN x length)
 train_data      :     NUM_TEST most-recent training patterns (shape NUM_TEST x length)
 pseudo_data     :     NUM_TEST untrained pseudo-patterns (shape NUM_TEST x length)
 '''
-def generate_random_dataset(length, num_active):
-    burn_in_data = generateData(NUM_TRAIN, length, num_active)
-    train_data = generateData(NUM_TEST, length, num_active)
-    pseudo_data = generateData(NUM_TEST, length, num_active)
+def generate_random_dataset(length, num_active, num_burn_in=NUM_BURN_IN, num_eval=NUM_EVAL):
+    burn_in_data = generateData(num_burn_in, length, num_active)
+    train_data = generateData(num_eval, length, num_active)
+    pseudo_data = generateData(num_eval, length, num_active)
     return burn_in_data, train_data, pseudo_data
 
 
@@ -105,17 +105,17 @@ burn_in_data    :     NUM_TRAIN burn-in patterns (shape NUM_TRAIN x length)
 train_data      :     NUM_TEST most-recent training patterns (shape NUM_TEST x length)
 pseudo_data     :     NUM_TEST untrained pseudo-patterns (shape NUM_TEST x length)
 '''
-def generate_correlated_dataset(length, num_active, num_flips, num_categories=10):
+def generate_correlated_dataset(length, num_active, num_flips, num_categories=10, num_burn_in=NUM_BURN_IN, num_eval=NUM_EVAL):
     # the burn-in and recent training patterns are drawn from the SAME set of categories
     train_prototypes = generateData(num_categories, length, num_active)
-    burn_in_data = generate_clustered_data(num_categories, NUM_TRAIN // num_categories, num_flips,
+    burn_in_data = generate_clustered_data(num_categories, num_burn_in // num_categories, num_flips,
                                            length, num_active, prototypes=train_prototypes)
-    train_data = generate_clustered_data(num_categories, NUM_TEST // num_categories, num_flips,
+    train_data = generate_clustered_data(num_categories, num_eval // num_categories, num_flips,
                                          length, num_active, prototypes=train_prototypes)
 
     # the pseudo-patterns come from a separate, never-seen set of categories
     pseudo_prototypes = generateData(num_categories, length, num_active)
-    pseudo_data = generate_clustered_data(num_categories, NUM_TEST // num_categories, num_flips,
+    pseudo_data = generate_clustered_data(num_categories, num_eval // num_categories, num_flips,
                                           length, num_active, prototypes=pseudo_prototypes)
 
     return burn_in_data, train_data, pseudo_data
@@ -139,8 +139,8 @@ burn_in_data    :     NUM_TRAIN burn-in patterns (shape NUM_TRAIN x length)
 train_data      :     NUM_TEST most-recent training patterns (shape NUM_TEST x length)
 pseudo_data     :     NUM_TEST untrained pseudo-patterns (shape NUM_TEST x length)
 '''
-def generate_tree_dataset(length, num_active, num_flips):
-    needed = NUM_TRAIN + 2 * NUM_TEST
+def generate_tree_dataset(length, num_active, num_flips, num_burn_in=NUM_BURN_IN, num_eval=NUM_EVAL):
+    needed = num_burn_in + 2 * num_eval
     sparsity = 1. * num_active / length
 
     # over-grow the tree, since it produces roughly num_data/2 leaf patterns
@@ -150,11 +150,24 @@ def generate_tree_dataset(length, num_active, num_flips):
         f'tree produced only {full_data.shape[0]} patterns, need {needed}'
 
     full_data = shuffleData(full_data)
-    burn_in_data = full_data[:NUM_TRAIN]
-    train_data = full_data[NUM_TRAIN:NUM_TRAIN + NUM_TEST]
-    pseudo_data = full_data[NUM_TRAIN + NUM_TEST:NUM_TRAIN + 2 * NUM_TEST]
+    burn_in_data = full_data[:num_burn_in]
+    train_data = full_data[num_burn_in:num_burn_in + num_eval]
+    pseudo_data = full_data[num_burn_in + num_eval:num_burn_in + 2 * num_eval]
 
     return burn_in_data, train_data, pseudo_data
+
+
+def generate_specific_dataset(length, num_active, data_type='random', num_flips=None, num_categories=10, num_burn_in=NUM_BURN_IN, num_eval=NUM_EVAL):
+    if data_type == 'random':
+        return generate_random_dataset(length, num_active, num_burn_in=num_burn_in, num_eval=num_eval)
+    elif data_type == 'correlated':
+        assert num_flips is not None
+        return generate_correlated_dataset(length, num_active, num_flips, num_categories=num_categories, num_burn_in=num_burn_in, num_eval=num_eval)
+    elif data_type == 'tree':
+        assert num_flips is not None
+        return generate_tree_dataset(length, num_active, num_flips, num_burn_in=num_burn_in, num_eval=num_eval)
+    else:
+        raise ValueError(f'Invalid data type: {data_type}')
 
 
 '''

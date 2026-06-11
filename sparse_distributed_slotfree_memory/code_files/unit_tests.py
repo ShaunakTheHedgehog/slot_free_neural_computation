@@ -183,19 +183,19 @@ class TestGenerateClusteredData(unittest.TestCase):
 
 class TestDatasetBuilders(unittest.TestCase):
 
-    EXPECTED = (globals.NUM_TRAIN, globals.NUM_TEST, globals.NUM_TEST)
+    EXPECTED = (globals.NUM_BURN_IN, globals.NUM_EVAL, globals.NUM_EVAL)
 
     def _check_splits(self, burn_in, train, pseudo, length, num_active):
-        self.assertEqual(burn_in.shape, (globals.NUM_TRAIN, length))
-        self.assertEqual(train.shape, (globals.NUM_TEST, length))
-        self.assertEqual(pseudo.shape, (globals.NUM_TEST, length))
+        self.assertEqual(burn_in.shape, (globals.NUM_BURN_IN, length))
+        self.assertEqual(train.shape, (globals.NUM_EVAL, length))
+        self.assertEqual(pseudo.shape, (globals.NUM_EVAL, length))
         for arr in (burn_in, train, pseudo):
             self.assertTrue(np.all(arr.sum(axis=1) == num_active))
             self.assertTrue(set(np.unique(arr).tolist()).issubset({0.0, 1.0}))
 
     def test_globals_are_consistent(self):
         # the burn-in + recent split should account for the total pattern budget
-        self.assertEqual(globals.NUM_TRAIN + globals.NUM_TEST, globals.TOT_NUM_PATTERNS)
+        self.assertEqual(globals.NUM_BURN_IN + globals.NUM_EVAL, globals.TOT_NUM_PATTERNS)
 
     def test_random_dataset(self):
         _seed(0)
