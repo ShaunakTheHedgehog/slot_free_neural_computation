@@ -59,14 +59,6 @@ def get_retrieval_probability_comparison(runset1, runset2, num_trials, num_mems,
         with open(full_filename, 'wb') as file:
             pkl.dump(output_dict, file)
 
-    # # Can plot the output reconstruction accuracy curves:
-    # data = [(out_matches_mean_1, pseudo_out_matches_mean_1), (out_matches_mean_2, pseudo_out_matches_mean_2)]
-    # runsets = (runset1, runset2)
-    
-    # plot_title = f'{filename}.png'
-    # plot_acc_curves(data, runsets, plot_title, max_age=1000,
-    #                 plot_xlabel='Age of Memory', plot_ylabel='Retrieval Accuracy')
-
     return output_dict
 
 '''
@@ -131,13 +123,13 @@ def get_match_probabilities(runset, num_trials, num_mems, cue_level, in_steady_s
         if in_steady_state:
             _, _ = net.learn_patterns(steady_state_data)
 
-        out_learned = np.zeros((num_mems, n_i))
+        # out_learned = np.zeros((num_mems, n_i))
 
         # perform learning step for all memories, one-by-one
         for j in range(num_mems):
             out = net.forward(data[j].reshape((-1, 1)), phase="learning")
-            out = net.retrieve(data[j].reshape((-1, 1)))
-            out_learned[j] = out.reshape(-1)
+            # out = net.retrieve(data[j].reshape((-1, 1)))
+            # out_learned[j] = out.reshape(-1)
 
 
         # evaluate output pattern completion abilities for both real and pseudo data 
