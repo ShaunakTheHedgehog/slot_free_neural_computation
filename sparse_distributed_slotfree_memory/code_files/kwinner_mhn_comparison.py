@@ -431,43 +431,6 @@ def plot_data(kwinner_data, samhn_data, plot_title, max_age=1000,
 
 
 
-# def plot_multiple_curves(filepath_list, runsets, plot_title, max_age=1000, colors=None,
-#                         plot_xlabel='Age of Memory', plot_ylabel='d\''):
-#     ages = np.arange(1, max_age + 1)
-#     plt.figure(figsize=(15, 8))
-
-#     for i in range(len(filepath_list)):
-#         filepath = filepath_list[i]
-#         (n_i, n_h, s, f, k, epsilon) = runsets[i]
-#         if colors is not None:
-#             color = colors[i]
-#         kmhn_data = np.load(filepath)
-#         kmhn_data = np.flip(kmhn_data, axis=1)
-
-#         mean_kmhn_data = np.mean(kmhn_data, axis=0)
-#         kmhn_std_error = np.std(kmhn_data, axis=0) / np.sqrt(kmhn_data.shape[0])
-
-#         plt.plot(ages, mean_kmhn_data[:max_age], label="epsilon=" + str(epsilon) + ", f=" + str(f) + ", k=" + str(k), color=color)
-#         plt.fill_between(ages, mean_kmhn_data[:max_age] - kmhn_std_error[:max_age], mean_kmhn_data[:max_age] + kmhn_std_error[:max_age], color='cyan')
-
-#     plt.ylabel(plot_ylabel, fontsize=32)
-#     plt.xlabel(plot_xlabel, fontsize=24)
-
-#     plt.xticks(fontsize=28)
-#     plt.yticks(fontsize=28)
-
-#     # plt.ylim(bottom=-0.1, top=0.85)
-#     plt.ylim(bottom=-0.5, top=5.)
-#     plt.xlim(0, max_age+1)
-#     plt.xticks(np.arange(0, max_age+1, 100))
-
-#     plt.yticks(np.arange(0, 5.1, 1))
-
-#     plt.legend(fontsize=20, loc='upper right')
-
-#     plt.savefig(plot_title)
-
-
 '''
 Main function for plotting output retrieval accuracy curves
 Main use case: comparing retrieval accuracy curves between a K-winner MHN and a parameter-matched 1-winner MHN.
@@ -776,11 +739,11 @@ def run_analysis():
                     help='hidden-layer rule (note: only affects the retrieval analysis)')
     ap.add_argument('--filename', type=str, default=None,
                     help='output filename (without .pkl); a descriptive default is used if omitted')
-    ap.add_argument('--no_save', action='store_true', help='do not write the results .pkl')
+    # ap.add_argument('--no_save', action='store_true', help='do not write the results .pkl')
     args = ap.parse_args()
 
     two_runsets = args.runset2 is not None
-    save_data = not args.no_save
+    save_data = True
 
     if args.data_type == 'correlated':
         assert args.num_mems % args.num_categories == 0, "num_mems must be divisible by num_categories for correlated data"
