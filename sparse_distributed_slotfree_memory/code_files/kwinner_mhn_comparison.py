@@ -230,7 +230,7 @@ def run_comparison_test(runset1, runset2, num_mems, num_samples, num_runs_per_sa
                 mhn_unif_rawdiffs[i] = mhn_unif_res['out_diff']
 
 
-        print("Iter " + str(i+1) + ' of ' + str(num_samples) + ' done')
+        print("Iter " + str(i+1) + ' of ' + str(num_samples) + ' done', flush=True)
 
 
     results_dict = {'kwinner_dprimes' : k_winner_dprimes, 'mhn_dprimes' : mhn_dprimes,
@@ -745,7 +745,7 @@ def run_analysis():
     two_runsets = args.runset2 is not None
     save_data = True
 
-    print(f'Running {args.analysis} analysis with data type {args.data_type} and cue level {args.cue_level}...')
+    print(f'Running {args.analysis} analysis with data type {args.data_type} and cue level {args.cue_level}...', flush=True)
 
     if args.data_type == 'correlated':
         assert args.num_mems % args.num_categories == 0, "num_mems must be divisible by num_categories for correlated data"
