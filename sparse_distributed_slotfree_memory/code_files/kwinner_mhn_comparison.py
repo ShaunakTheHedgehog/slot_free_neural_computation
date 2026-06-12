@@ -402,8 +402,8 @@ def plot_data(kwinner_data, samhn_data, plot_title, max_age=1000,
         if plot_mode != 'log_y':
             plt.ylim(bottom=-0.1, top=1.0)
 
-    else:
-        plt.ylim(bottom=-0.5, top=5.)
+    # else:
+    #     plt.ylim(bottom=-0.5, top=5.)
     plt.xlim(0, 1000)
 
     if not with_regression:
@@ -415,8 +415,8 @@ def plot_data(kwinner_data, samhn_data, plot_title, max_age=1000,
     if plot_ylabel == 'Raw Difference':
         if plot_mode != 'log_y':
             plt.yticks(np.arange(0, 1.01, 0.2))
-    else:
-        plt.yticks(np.arange(0, 5.1, 1))
+    # else:
+    #     plt.yticks(np.arange(0, 5.1, 1))
 
 
     if not with_regression:
@@ -792,7 +792,7 @@ def plot_analysis():
     ap.add_argument('--max_age', type=int, default=1000)
     ap.add_argument('--cue_level', type=float, default=1.0)
     ap.add_argument('--uniform_baseline', action='store_true',
-                    help='[retrieval] also draw the uniform pseudo-pattern baseline')
+                    help='show the uniform pseudo-pattern baseline')
     args = ap.parse_args()
 
     path = args.results_file if args.results_file.endswith('.pkl') else f'{args.results_file}.pkl'
@@ -802,8 +802,12 @@ def plot_analysis():
     if args.analysis == 'dprime':
         if args.plot_quantity == 'rawdiff':
             kkey, mkey, ylabel = 'kwinner_rawdiffs', 'mhn_rawdiffs', 'Raw Difference'
+            if args.uniform_baseline:
+                kkey, mkey, ylabel = 'kwinner_unif_rawdiffs', 'mhn_unif_rawdiffs', 'Raw Diff. (Unif. Baseline)'
         else:
             kkey, mkey, ylabel = 'kwinner_dprimes', 'mhn_dprimes', "d'"
+            if args.uniform_baseline:
+                kkey, mkey, ylabel = 'kwinner_unif_dprimes', 'mhn_unif_dprimes', "d' (Unif. Baseline)"
         title = args.plot_title or f'{args.plot_quantity}_plot.png'
         plot_data(results[kkey], results[mkey], title, max_age=args.max_age,
                   plot_ylabel=ylabel, cue_level=args.cue_level, mhn_runset=args.runset2, figsize=(8, 5))
