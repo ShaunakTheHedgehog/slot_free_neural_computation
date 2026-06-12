@@ -13,7 +13,7 @@ num_active      :     number of 1-bits in each pattern (i.e. effectively the spa
 Returns:
 data            :     a 2D array of binary patterns (with shape num_examples x length)
 '''
-def generateData(num_examples, length, num_active):
+def generate_data(num_examples, length, num_active):
   data = np.zeros((num_examples, length))
   for i in range(num_examples):
     data_vec = np.zeros(length)
@@ -46,7 +46,7 @@ data        :     a shuffled 2D array of binary patterns (with shape (num_catego
 def generate_clustered_data(num_categories, num_examples_per_category, num_flips, length, num_active, prototypes=None):
     if prototypes is None:
         # draw the iid random binary prototype/parent patterns
-        prototypes = generateData(num_categories, length, num_active)
+        prototypes = generate_data(num_categories, length, num_active)
 
     data = np.zeros((num_categories * num_examples_per_category, length))
     idx = 0
@@ -77,9 +77,9 @@ train_data      :     NUM_TEST most-recent training patterns (shape NUM_TEST x l
 pseudo_data     :     NUM_TEST untrained pseudo-patterns (shape NUM_TEST x length)
 '''
 def generate_random_dataset(length, num_active, num_burn_in=NUM_BURN_IN, num_eval=NUM_EVAL):
-    burn_in_data = generateData(num_burn_in, length, num_active)
-    train_data = generateData(num_eval, length, num_active)
-    pseudo_data = generateData(num_eval, length, num_active)
+    burn_in_data = generate_data(num_burn_in, length, num_active)
+    train_data = generate_data(num_eval, length, num_active)
+    pseudo_data = generate_data(num_eval, length, num_active)
     return burn_in_data, train_data, pseudo_data
 
 
@@ -107,14 +107,14 @@ pseudo_data     :     NUM_TEST untrained pseudo-patterns (shape NUM_TEST x lengt
 '''
 def generate_correlated_dataset(length, num_active, num_flips, num_categories=10, num_burn_in=NUM_BURN_IN, num_eval=NUM_EVAL):
     # the burn-in and recent training patterns are drawn from the SAME set of categories
-    train_prototypes = generateData(num_categories, length, num_active)
+    train_prototypes = generate_data(num_categories, length, num_active)
     burn_in_data = generate_clustered_data(num_categories, num_burn_in // num_categories, num_flips,
                                            length, num_active, prototypes=train_prototypes)
     train_data = generate_clustered_data(num_categories, num_eval // num_categories, num_flips,
                                          length, num_active, prototypes=train_prototypes)
 
     # the pseudo-patterns come from a separate, never-seen set of categories
-    pseudo_prototypes = generateData(num_categories, length, num_active)
+    pseudo_prototypes = generate_data(num_categories, length, num_active)
     pseudo_data = generate_clustered_data(num_categories, num_eval // num_categories, num_flips,
                                           length, num_active, prototypes=pseudo_prototypes)
 
@@ -185,7 +185,7 @@ class NestedTreeNode:
 
     self.pattern_input_size = pattern_input_size
     self.pattern_sparsity = pattern_sparsity
-    x = generateData(1, pattern_input_size, int(pattern_input_size * pattern_sparsity))[0]
+    x = generate_data(1, pattern_input_size, int(pattern_input_size * pattern_sparsity))[0]
     self.pattern = x  # store pattern for current node
 
   # add a new child to the current node

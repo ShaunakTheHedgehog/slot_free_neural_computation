@@ -31,7 +31,7 @@ from utils import (
     calculate_offdiagonal_statistics,
 )
 from data import (
-    generateData,
+    generate_data,
     generate_clustered_data,
     generate_random_dataset,
     generate_correlated_dataset,
@@ -109,7 +109,7 @@ class TestUtils(unittest.TestCase):
 
     def test_shuffle_data_preserves_rows(self):
         _seed(0)
-        data = generateData(50, 30, 5)
+        data = generate_data(50, 30, 5)
         shuffled = shuffleData(data)
         self.assertEqual(shuffled.shape, data.shape)
         # the same set of rows should be present, just reordered
@@ -136,7 +136,7 @@ class TestGenerateData(unittest.TestCase):
 
     def test_shape_and_sparsity(self):
         _seed(0)
-        data = generateData(num_examples=40, length=120, num_active=15)
+        data = generate_data(num_examples=40, length=120, num_active=15)
         self.assertEqual(data.shape, (40, 120))
         self.assertTrue(np.all(data.sum(axis=1) == 15))
         self.assertTrue(set(np.unique(data).tolist()).issubset({0.0, 1.0}))
@@ -155,7 +155,7 @@ class TestGenerateClusteredData(unittest.TestCase):
     def test_descendants_close_to_supplied_prototypes(self):
         _seed(0)
         length, num_active, num_flips = 200, 20, 4
-        prototypes = generateData(3, length, num_active)
+        prototypes = generate_data(3, length, num_active)
         data = generate_clustered_data(num_categories=3, num_examples_per_category=50,
                                        num_flips=num_flips, length=length, num_active=num_active,
                                        prototypes=prototypes)
@@ -283,7 +283,7 @@ class TestKWinnerNet(unittest.TestCase):
     def test_forward_hidden_has_k_winners(self):
         _seed(0)
         net = self._make_net(k=5)
-        x = generateData(1, 100, 10)[0].reshape(-1, 1)
+        x = generate_data(1, 100, 10)[0].reshape(-1, 1)
         net.forward(x, phase='learning')
         self.assertEqual(int(net.y.sum()), 5)
 
@@ -291,7 +291,7 @@ class TestKWinnerNet(unittest.TestCase):
         _seed(0)
         num_active = 10
         net = self._make_net(num_active=num_active)
-        x = generateData(1, 100, num_active)[0].reshape(-1, 1)
+        x = generate_data(1, 100, num_active)[0].reshape(-1, 1)
         out = net.retrieve(x)
         self.assertEqual(int(out.sum()), num_active)
 
@@ -301,7 +301,7 @@ class TestKWinnerNet(unittest.TestCase):
         _seed(0)
         num_active = 10
         net = self._make_net(num_active=num_active, eta=1.0)
-        data = generateData(5, 100, num_active)
+        data = generate_data(5, 100, num_active)
         net.learn_patterns(data)
         out = net.retrieve(data[-1].reshape(-1, 1)).reshape(-1)
         overlap = int(np.dot(out, data[-1]))
@@ -310,7 +310,7 @@ class TestKWinnerNet(unittest.TestCase):
     def test_retrieval_does_not_change_weights(self):
         _seed(0)
         net = self._make_net()
-        data = generateData(3, 100, 10)
+        data = generate_data(3, 100, 10)
         net.learn_patterns(data)
         before = net.W_xy.copy()
         net.retrieve_patterns(data)

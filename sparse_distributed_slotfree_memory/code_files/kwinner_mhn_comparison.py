@@ -4,7 +4,7 @@ import random
 import argparse
 import matplotlib.pyplot as plt
 from utils import shuffleData
-from data import generateData, NestedTreeNode, generate_specific_dataset
+from data import generate_data, NestedTreeNode, generate_specific_dataset
 from kwinnernet import KWinnerNet
 from sklearn.linear_model import LinearRegression
 import pickle as pkl
@@ -118,7 +118,7 @@ def get_match_probabilities(runset, num_trials, num_mems, cue_level, in_steady_s
                                                                         num_burn_in=num_burn_in, num_eval=num_mems)
 
         if data_clustered and uniform_baseline is True:
-            unif_pseudodata = generateData(num_mems, n_i, s)
+            unif_pseudodata = generate_data(num_mems, n_i, s)
             
         # get K-winner MHN into "steady state" by learning pre-existing patterns if needed
         if in_steady_state:
