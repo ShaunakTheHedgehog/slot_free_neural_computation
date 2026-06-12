@@ -54,6 +54,11 @@ class KWinnerNet:
 
         return mat
 
+    def get_weight_asymmetry(self):
+        # compute the average absolute difference between W_xy and W_yx^T across all existing connections
+        asymmetry = np.sum(np.abs(self.W_xy - self.W_yx.T)) / np.sum(self.W_xy_architecture)
+        return asymmetry
+
     # update rule for the weights, which is symmetric for W_xy and W_yx
     # only the incoming weights to the k winning hidden units get updated under this rule
     def __adjust_weights(self, x):
