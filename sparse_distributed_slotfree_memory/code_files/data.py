@@ -105,7 +105,8 @@ burn_in_data    :     NUM_TRAIN burn-in patterns (shape NUM_TRAIN x length)
 train_data      :     NUM_TEST most-recent training patterns (shape NUM_TEST x length)
 pseudo_data     :     NUM_TEST untrained pseudo-patterns (shape NUM_TEST x length)
 '''
-def generate_correlated_dataset(length, num_active, num_flips, num_categories=10, num_burn_in=NUM_BURN_IN, num_eval=NUM_EVAL):
+def generate_correlated_dataset(length, num_active, num_flips, num_categories=10, num_burn_in=NUM_BURN_IN, num_eval=NUM_EVAL,
+                                pseudo_from_same_categories=True):
     # the burn-in and recent training patterns are drawn from the SAME set of categories
     train_prototypes = generate_data(num_categories, length, num_active)
     burn_in_data = generate_clustered_data(num_categories, num_burn_in // num_categories, num_flips,
@@ -114,7 +115,10 @@ def generate_correlated_dataset(length, num_active, num_flips, num_categories=10
                                          length, num_active, prototypes=train_prototypes)
 
     # the pseudo-patterns come from a separate, never-seen set of categories
-    pseudo_prototypes = generate_data(num_categories, length, num_active)
+    if pseudo_from_same_categories:
+        pseudo_prototypes = train_prototypes
+    else:
+        pseudo_prototypes = generate_data(num_categories, length, num_active)
     pseudo_data = generate_clustered_data(num_categories, num_eval // num_categories, num_flips,
                                           length, num_active, prototypes=pseudo_prototypes)
 

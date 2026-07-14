@@ -34,6 +34,8 @@ htmlcov/
 # Generated experiment artifacts (kept local, not version-controlled)
 *.npy
 *.pkl
+*.png
+correlated_data_tests/
 
 # Slurm job logs
 slurm-*.out
