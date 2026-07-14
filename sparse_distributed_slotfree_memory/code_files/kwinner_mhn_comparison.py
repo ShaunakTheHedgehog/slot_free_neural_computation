@@ -32,19 +32,19 @@ nonlinearity_type       :       the type of nonlinearity used at the hidden stat
 Returns a dictionary with all of the retrieval accuracy data for both runsets, on both the real patterns and untrained pseudo-patterns.
 '''
 def get_retrieval_probability_comparison(runset1, runset2, num_trials, num_mems, cue_level, num_burn_in=NUM_BURN_IN, save_data=True, filename='retrieval_acc_comparison', two_runsets=True,
-                                         data_type='random', num_flips=None, num_categories=10, uniform_baseline=False, nonlinearity_type='hard_k'):
+                                         data_type='random', num_flips=None, num_categories=10, uniform_baseline=False, nonlinearity_type='hard_k', use_pseudo_from_same_categories=True):
     assert nonlinearity_type in ['hard_k', 'random']
     data_clustered = (data_type != 'random')
     
     out_matches_mean_1, pseudo_out_matches_mean_1, _, _, unif_results_1 = get_match_probabilities(runset1, num_trials, num_mems, cue_level, in_steady_state=True, num_burn_in=num_burn_in,
                                                                                                   data_type=data_type, num_flips=num_flips, num_categories=num_categories,
-                                                                                                  uniform_baseline=uniform_baseline, nonlinearity_type=nonlinearity_type)
+                                                                                                  uniform_baseline=uniform_baseline, nonlinearity_type=nonlinearity_type, use_pseudo_from_same_categories=use_pseudo_from_same_categories)
     
     out_matches_mean_2, pseudo_out_matches_mean_2, unif_results_2 = None, None, None 
     if two_runsets:
         out_matches_mean_2, pseudo_out_matches_mean_2, _, _, unif_results_2 = get_match_probabilities(runset2, num_trials, num_mems, cue_level, in_steady_state=True, num_burn_in=num_burn_in,
                                                                                                       data_type=data_type, num_flips=num_flips, num_categories=num_categories, 
-                                                                                                      uniform_baseline=uniform_baseline, nonlinearity_type=nonlinearity_type)
+                                                                                                      uniform_baseline=uniform_baseline, nonlinearity_type=nonlinearity_type, use_pseudo_from_same_categories=use_pseudo_from_same_categories)
 
     output_dict = {'model1_out' : out_matches_mean_1, 'model1_pseudo_out' : pseudo_out_matches_mean_1,
                    'model2_out' : out_matches_mean_2, 'model2_pseudo_out' : pseudo_out_matches_mean_2,
@@ -85,7 +85,7 @@ unif_results                :       a dictionary of similarly trial-averaged mea
 '''
 def get_match_probabilities(runset, num_trials, num_mems, cue_level, in_steady_state=True, num_burn_in=NUM_BURN_IN,
                             data_type='random', num_flips=None, num_categories=10, 
-                            uniform_baseline=False, nonlinearity_type='hard_k'):
+                            uniform_baseline=False, nonlinearity_type='hard_k', use_pseudo_from_same_categories=True):
     assert nonlinearity_type in ['hard_k', 'random']
     data_clustered = (data_type != 'random')
     (n_i, n_h, s, f, k, epsilon) = runset
@@ -115,7 +115,7 @@ def get_match_probabilities(runset, num_trials, num_mems, cue_level, in_steady_s
         # data = full_data[num_mems:2 * num_mems]
         # pseudodata = full_data[2 * num_mems:3 * num_mems + 1]
         steady_state_data, data, pseudodata = generate_specific_dataset(length, num_active, data_type, num_flips, num_categories,
-                                                                        num_burn_in=num_burn_in, num_eval=num_mems)
+                                                                        num_burn_in=num_burn_in, num_eval=num_mems, pseudo_from_same_categories=use_pseudo_from_same_categories)
 
         if data_clustered and uniform_baseline is True:
             unif_pseudodata = generate_data(num_mems, n_i, s)
@@ -181,7 +181,8 @@ two_runsets             :       whether two runsets are being compared, or if ju
 Returns a dictionary of the relevant d' and raw difference information across both model types.
 '''
 def run_comparison_test(runset1, runset2, num_mems, num_samples, num_runs_per_sample, cue_level, num_burn_in=NUM_BURN_IN, data_type='random', 
-                        num_flips=None, num_categories=10, uniform_baseline=False, save_data=True, filename='kwinner_mhn_comparison_results', two_runsets=True):
+                        num_flips=None, num_categories=10, uniform_baseline=False, save_data=True, filename='kwinner_mhn_comparison_results', two_runsets=True,
+                        use_pseudo_from_same_categories=True):
     data_clustered = (data_type != 'random')
     k_winner_dprimes = np.zeros((num_samples, num_mems))
     mhn_dprimes = np.zeros((num_samples, num_mems))
@@ -205,7 +206,7 @@ def run_comparison_test(runset1, runset2, num_mems, num_samples, num_runs_per_sa
     for i in range(num_samples):
         out_matches, pseudo_out_matches, d_out, out_diff, unif_res = get_match_probabilities(runset1, num_runs_per_sample, num_mems, cue_level, in_steady_state=True, num_burn_in=num_burn_in,
                                                                                       data_type=data_type, num_flips=num_flips, num_categories=num_categories,
-                                                                                      uniform_baseline=uniform_baseline)
+                                                                                      uniform_baseline=uniform_baseline, use_pseudo_from_same_categories=use_pseudo_from_same_categories)
         # get_match_probabilities(runset=runset1, num_trials=num_runs_per_sample, num_mems=num_mems, cue_level=cue_level, in_steady_state=True,
         #                                                                               data_clustered=data_clustered, num_flips=num_flips)
         k_winner_dprimes[i] = d_out
@@ -219,7 +220,7 @@ def run_comparison_test(runset1, runset2, num_mems, num_samples, num_runs_per_sa
         if two_runsets:
             mhn_out_matches, mhn_pseudo_out_matches, mhn_d_out, mhn_out_diff, mhn_unif_res = get_match_probabilities(runset2, num_runs_per_sample, num_mems, cue_level, in_steady_state=True, num_burn_in=num_burn_in,
                                                                                       data_type=data_type, num_flips=num_flips, num_categories=num_categories,
-                                                                                      uniform_baseline=uniform_baseline)
+                                                                                      uniform_baseline=uniform_baseline, use_pseudo_from_same_categories=use_pseudo_from_same_categories)
             # get_match_probabilities(runset=runset2, num_trials=num_runs_per_sample, num_mems=num_mems, cue_level=cue_level, in_steady_state=True, data_clustered=data_clustered, num_flips=num_flips)
             mhn_dprimes[i] = mhn_d_out
             mhn_rawdiffs[i] = mhn_out_diff

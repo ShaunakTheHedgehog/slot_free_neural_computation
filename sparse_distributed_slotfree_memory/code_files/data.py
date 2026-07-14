@@ -161,12 +161,13 @@ def generate_tree_dataset(length, num_active, num_flips, num_burn_in=NUM_BURN_IN
     return burn_in_data, train_data, pseudo_data
 
 
-def generate_specific_dataset(length, num_active, data_type='random', num_flips=None, num_categories=10, num_burn_in=NUM_BURN_IN, num_eval=NUM_EVAL):
+def generate_specific_dataset(length, num_active, data_type='random', num_flips=None, num_categories=10, num_burn_in=NUM_BURN_IN, num_eval=NUM_EVAL,
+                              pseudo_from_same_categories=True):
     if data_type == 'random':
         return generate_random_dataset(length, num_active, num_burn_in=num_burn_in, num_eval=num_eval)
     elif data_type == 'correlated':
         assert num_flips is not None
-        return generate_correlated_dataset(length, num_active, num_flips, num_categories=num_categories, num_burn_in=num_burn_in, num_eval=num_eval)
+        return generate_correlated_dataset(length, num_active, num_flips, num_categories=num_categories, num_burn_in=num_burn_in, num_eval=num_eval, pseudo_from_same_categories=pseudo_from_same_categories)
     elif data_type == 'tree':
         assert num_flips is not None
         return generate_tree_dataset(length, num_active, num_flips, num_burn_in=num_burn_in, num_eval=num_eval)
