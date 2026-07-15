@@ -309,7 +309,7 @@ theory_lw           :       line width for theoretical / regression curves
 figsize             :       size of plot
 '''
 def plot_data(kwinner_data, samhn_data, plot_title, max_age=1000,
-              plot_xlabel='100% Cues', plot_ylabel='d\'', plot_rel_advantages=True, plot_mode=None,
+              plot_xlabel='100% Cues', plot_ylabel='d\'', plot_rel_advantages=True, plot_mode=None, ylim=None,
               with_regression=False, regression_idxs=200, mhn_runset=None, cue_level=1.0, plot_main_data=True, lw=2.2, theory_lw=2.5, figsize=None):
 
     kwinner_data = np.flip(kwinner_data, axis=1)
@@ -403,8 +403,9 @@ def plot_data(kwinner_data, samhn_data, plot_title, max_age=1000,
         if plot_mode != 'log_y':
             plt.ylim(bottom=-0.1, top=1.0)
 
-    # else:
-    #     plt.ylim(bottom=-0.5, top=5.)
+    else:
+        if ylim is not None:
+            plt.ylim(bottom=-0.25, top=ylim)
     plt.xlim(0, 1000)
 
     if not with_regression:
@@ -736,6 +737,7 @@ def run_analysis():
                     help='[dprime] number of trials per sample')
     ap.add_argument('--uniform_baseline', action='store_true',
                     help='also evaluate an unstructured uniform pseudo-pattern baseline (clustered data)')
+    ap.add_argument('--cue_level', type=float, default=1.0)
     ap.add_argument('--nonlinearity_type', choices=['hard_k', 'random'], default='hard_k',
                     help='hidden-layer rule (note: only affects the retrieval analysis)')
     ap.add_argument('--filename', type=str, default=None,
@@ -794,6 +796,8 @@ def plot_analysis():
     ap.add_argument('--cue_level', type=float, default=1.0)
     ap.add_argument('--uniform_baseline', action='store_true',
                     help='show the uniform pseudo-pattern baseline')
+    ap.add_argument('--ylim', type=float, default=None,
+                    help='y-axis limit for the plot')
     args = ap.parse_args()
 
     path = args.results_file if args.results_file.endswith('.pkl') else f'{args.results_file}.pkl'
@@ -811,7 +815,7 @@ def plot_analysis():
                 kkey, mkey, ylabel = 'kwinner_unif_dprimes', 'mhn_unif_dprimes', "d' (Unif. Baseline)"
         title = args.plot_title or f'{args.plot_quantity}_plot.png'
         plot_data(results[kkey], results[mkey], title, max_age=args.max_age,
-                  plot_ylabel=ylabel, cue_level=args.cue_level, mhn_runset=args.runset2, figsize=(8, 5))
+                  plot_ylabel=ylabel, cue_level=args.cue_level, mhn_runset=args.runset2, figsize=(8, 4), ylim=args.ylim)
     else:
         data = [(results['model1_out'], results['model1_pseudo_out'], results['model1_unif_pseudo_out']),
                 (results['model2_out'], results['model2_pseudo_out'], results['model2_unif_pseudo_out'])]
