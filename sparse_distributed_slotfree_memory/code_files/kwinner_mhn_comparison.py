@@ -357,7 +357,7 @@ def plot_data(kwinner_data, samhn_data, plot_title, max_age=1000,
         if plot_ylabel == 'Raw Difference':
             plt.scatter(kwinner_better_inds, -0.05*np.ones_like(kwinner_better_inds), s=1, color='red')
         else:
-            plt.scatter(kwinner_better_inds, -0.4*np.ones_like(kwinner_better_inds), s=1, color='red')
+            plt.scatter(kwinner_better_inds, -0.25*np.ones_like(kwinner_better_inds), s=1, color='red')
 
 
     if plot_main_data:
@@ -406,7 +406,7 @@ def plot_data(kwinner_data, samhn_data, plot_title, max_age=1000,
     else:
         if ylim is None:
             ylim = 10.
-        plt.ylim(bottom=-0.25, top=ylim)
+        plt.ylim(bottom=-0.35, top=ylim)
     plt.xlim(0, 1000)
 
     if not with_regression:
