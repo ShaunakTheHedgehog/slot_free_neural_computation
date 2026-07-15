@@ -1,6 +1,6 @@
 import numpy as np
 import random
-from utils import bit_flipped, shuffle_data, shuffle_ordering
+from utils import bit_flipped, shuffle_data
 from globals import NUM_BURN_IN, NUM_EVAL, TOT_NUM_PATTERNS
 
 '''
@@ -134,7 +134,6 @@ def generate_correlated_dataset(length, num_active, num_flips, num_categories=10
     train_data = generate_clustered_data(num_categories, num_eval // num_categories, num_flips,
                                          length, num_active, prototypes=train_prototypes)
 
-    # the pseudo-patterns come from a separate, never-seen set of categories
     if pseudo_from_same_categories:
         pseudo_prototypes = train_prototypes
     else:
@@ -183,12 +182,13 @@ def generate_tree_dataset(length, num_active, num_flips, num_burn_in=NUM_BURN_IN
 
 
 def generate_specific_dataset(length, num_active, data_type='random', num_flips=None, num_categories=10, num_burn_in=NUM_BURN_IN, num_eval=NUM_EVAL,
-                              pseudo_from_same_categories=True):
+                              pseudo_from_same_categories=True, order_match=False):
     if data_type == 'random':
         return generate_random_dataset(length, num_active, num_burn_in=num_burn_in, num_eval=num_eval)
     elif data_type == 'correlated':
         assert num_flips is not None
-        return generate_correlated_dataset(length, num_active, num_flips, num_categories=num_categories, num_burn_in=num_burn_in, num_eval=num_eval, pseudo_from_same_categories=pseudo_from_same_categories)
+        return generate_correlated_dataset(length, num_active, num_flips, num_categories=num_categories, num_burn_in=num_burn_in, num_eval=num_eval, 
+                                           pseudo_from_same_categories=pseudo_from_same_categories, order_match=order_match)
     elif data_type == 'tree':
         assert num_flips is not None
         return generate_tree_dataset(length, num_active, num_flips, num_burn_in=num_burn_in, num_eval=num_eval)
