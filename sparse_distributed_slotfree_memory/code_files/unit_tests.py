@@ -26,7 +26,7 @@ from utils import (
     hard_k_winner_take_all,
     random_k_winner_take_all,
     bit_flipped,
-    shuffleData,
+    shuffle_data,
     calculate_diagonal_statistics,
     calculate_offdiagonal_statistics,
 )
@@ -110,7 +110,7 @@ class TestUtils(unittest.TestCase):
     def test_shuffle_data_preserves_rows(self):
         _seed(0)
         data = generate_data(50, 30, 5)
-        shuffled = shuffleData(data)
+        shuffled = shuffle_data(data)
         self.assertEqual(shuffled.shape, data.shape)
         # the same set of rows should be present, just reordered
         orig = sorted(tuple(row) for row in data.tolist())

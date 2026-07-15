@@ -243,7 +243,7 @@ def bit_flipped(x, num_flips):
 
 
 # permute the patterns in a dataset of shape num_patterns x input_size
-def shuffleData(data):
+def shuffle_data(data):
   shuffle_inds = np.arange(data.shape[0])
   np.random.shuffle(shuffle_inds)
   shuffled_data = data[shuffle_inds.tolist()]

@@ -1,6 +1,6 @@
 import numpy as np
 import random
-from utils import bit_flipped, shuffleData
+from utils import bit_flipped, shuffle_data, shuffle_ordering
 from globals import NUM_BURN_IN, NUM_EVAL, TOT_NUM_PATTERNS
 
 '''
@@ -43,7 +43,7 @@ prototypes                  :     optional array of pre-generated prototypes (sh
 Returns:
 data        :     a shuffled 2D array of binary patterns (with shape (num_categories * num_examples_per_category) x length)
 '''
-def generate_clustered_data(num_categories, num_examples_per_category, num_flips, length, num_active, prototypes=None):
+def generate_clustered_data(num_categories, num_examples_per_category, num_flips, length, num_active, prototypes=None, shuffle=True):
     if prototypes is None:
         # draw the iid random binary prototype/parent patterns
         prototypes = generate_data(num_categories, length, num_active)
@@ -57,7 +57,10 @@ def generate_clustered_data(num_categories, num_examples_per_category, num_flips
             idx += 1
 
     # shuffle the ordering of all the generated patterns
-    return shuffleData(data)
+    if shuffle:
+       return shuffle_data(data)
+    else:
+       return data
 
 
 '''
@@ -106,11 +109,28 @@ train_data      :     NUM_TEST most-recent training patterns (shape NUM_TEST x l
 pseudo_data     :     NUM_TEST untrained pseudo-patterns (shape NUM_TEST x length)
 '''
 def generate_correlated_dataset(length, num_active, num_flips, num_categories=10, num_burn_in=NUM_BURN_IN, num_eval=NUM_EVAL,
-                                pseudo_from_same_categories=True):
+                                pseudo_from_same_categories=True, order_match=False):
+    if order_match:
+       assert pseudo_from_same_categories, "order_match requires pseudo_from_same_categories=True"
+    
     # the burn-in and recent training patterns are drawn from the SAME set of categories
     train_prototypes = generate_data(num_categories, length, num_active)
     burn_in_data = generate_clustered_data(num_categories, num_burn_in // num_categories, num_flips,
                                            length, num_active, prototypes=train_prototypes)
+    
+    if order_match:
+      train_data = generate_clustered_data(num_categories, num_eval // num_categories, num_flips,
+                                            length, num_active, prototypes=train_prototypes, shuffle=False)
+      pseudo_data = generate_clustered_data(num_categories, num_eval // num_categories, num_flips,
+                                             length, num_active, prototypes=train_prototypes, shuffle=False)
+      ordering = np.arange(train_data.shape[0])
+      np.random.shuffle(ordering)
+       
+      train_data = train_data[ordering]
+      pseudo_data = pseudo_data[ordering]
+      return burn_in_data, train_data, pseudo_data
+    
+
     train_data = generate_clustered_data(num_categories, num_eval // num_categories, num_flips,
                                          length, num_active, prototypes=train_prototypes)
 
@@ -119,6 +139,7 @@ def generate_correlated_dataset(length, num_active, num_flips, num_categories=10
         pseudo_prototypes = train_prototypes
     else:
         pseudo_prototypes = generate_data(num_categories, length, num_active)
+
     pseudo_data = generate_clustered_data(num_categories, num_eval // num_categories, num_flips,
                                           length, num_active, prototypes=pseudo_prototypes)
 
@@ -153,7 +174,7 @@ def generate_tree_dataset(length, num_active, num_flips, num_burn_in=NUM_BURN_IN
     assert full_data.shape[0] >= needed, \
         f'tree produced only {full_data.shape[0]} patterns, need {needed}'
 
-    full_data = shuffleData(full_data)
+    full_data = shuffle_data(full_data)
     burn_in_data = full_data[:num_burn_in]
     train_data = full_data[num_burn_in:num_burn_in + num_eval]
     pseudo_data = full_data[num_burn_in + num_eval:num_burn_in + 2 * num_eval]

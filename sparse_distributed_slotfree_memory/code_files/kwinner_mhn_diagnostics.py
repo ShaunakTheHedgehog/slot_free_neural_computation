@@ -3,7 +3,7 @@ import sys
 import random
 import argparse
 import matplotlib.pyplot as plt
-from utils import shuffleData
+from utils import shuffle_data
 from data import generate_data, NestedTreeNode, generate_specific_dataset
 from kwinnernet import KWinnerNet
 from globals import *
