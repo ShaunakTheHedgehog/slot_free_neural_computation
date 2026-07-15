@@ -404,8 +404,9 @@ def plot_data(kwinner_data, samhn_data, plot_title, max_age=1000,
             plt.ylim(bottom=-0.1, top=1.0)
 
     else:
-        if ylim is not None:
-            plt.ylim(bottom=-0.25, top=ylim)
+        if ylim is None:
+            ylim = 10.
+        plt.ylim(bottom=-0.25, top=ylim)
     plt.xlim(0, 1000)
 
     if not with_regression:
@@ -737,7 +738,6 @@ def run_analysis():
                     help='[dprime] number of trials per sample')
     ap.add_argument('--uniform_baseline', action='store_true',
                     help='also evaluate an unstructured uniform pseudo-pattern baseline (clustered data)')
-    ap.add_argument('--cue_level', type=float, default=1.0)
     ap.add_argument('--nonlinearity_type', choices=['hard_k', 'random'], default='hard_k',
                     help='hidden-layer rule (note: only affects the retrieval analysis)')
     ap.add_argument('--filename', type=str, default=None,
