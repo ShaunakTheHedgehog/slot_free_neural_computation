@@ -17,8 +17,9 @@ class KWinnerNet:
     nonlinearity_type   :       whether the nonlinearity is a "top-k" rule or a "pick k random units" rule
 
     '''
-    def __init__(self, input_size, hidden_size, input_sparsity, fan_in_ratio, k, eta=1.0, nonlinearity_type='hard_k'):
+    def __init__(self, input_size: int, hidden_size: int, input_sparsity: float, fan_in_ratio: float, k: int, eta: float = 1.0, nonlinearity_type: str = 'hard_k'):
         assert nonlinearity_type in ['hard_k', 'random']
+        assert k > 0 and k <= hidden_size
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.fan_in_ratio = fan_in_ratio
@@ -62,8 +63,13 @@ class KWinnerNet:
     # update rule for the weights, which is symmetric for W_xy and W_yx
     # only the incoming weights to the k winning hidden units get updated under this rule
     def __adjust_weights(self, x):
-        self.W_xy = self.W_xy + self.eta * (np.outer(self.y, x) - self.W_xy * self.y) * self.W_xy_architecture
-        self.W_yx = self.W_yx + self.eta * (np.outer(x, self.y) - self.W_yx * self.y.T) * self.W_xy_architecture.T
+        winners = np.nonzero(self.y.reshape(-1))[0]
+        x_1d = x.reshape(-1)                           # (n_i,)
+        y_w = self.y.reshape(-1)[winners][:, None]     # (k, 1)
+        arch_w = self.W_xy_architecture[winners]       # (k, n_i)
+
+        self.W_xy[winners] += self.eta * y_w * (x_1d[None, :] - self.W_xy[winners]) * arch_w
+        self.W_yx[:, winners] += self.eta * y_w.T * (x_1d[:, None] - self.W_yx[:, winners]) * arch_w.T
 
     '''
     Pass a pattern through the K-winner MHN, either to learn it or retrieve a completed pattern
@@ -227,3 +233,34 @@ class ModernHopfieldNet:
 
     def get_time_param(self):
         return self.time_param
+
+
+# if __name__ == '__main__':
+#     # test the K-winner MHN
+#     from data import generate_data
+#     net = KWinnerNet(input_size=1000, hidden_size=100, input_sparsity=0.1, fan_in_ratio=1., k=1, eta=1.)
+#     # create a second net with the same exact initial weights
+#     net2 = KWinnerNet(input_size=1000, hidden_size=100, input_sparsity=0.1, fan_in_ratio=1., k=1, eta=1.)
+#     net2.W_xy = np.copy(net.W_xy)
+#     net2.W_yx = np.copy(net.W_yx)
+#     net2.W_xy_architecture = np.copy(net.W_xy_architecture)
+
+#     data = generate_data(5000, 1000, 100)
+
+#     print('hi')
+
+#     # check that adjust weights and adjust weights 2 give the same result, over 100 random patterns
+#     for i in range(50):
+#         x = data[i].reshape((-1, 1))
+#         net.forward(x, phase="learning")
+
+#         net2.forward(x, phase='retrieval')
+#         net2.adjust_weights2(x)
+
+#         # check weights match
+#         assert np.allclose(net.W_xy, net2.W_xy)
+#         assert np.allclose(net.W_yx, net2.W_yx)
+
+#     print('good!')
+
+    
