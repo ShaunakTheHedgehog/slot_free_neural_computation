@@ -114,7 +114,7 @@ def perform_partial_cue_test(net, col_data, cue_percentages=np.arange(0.05, 1.05
 
 
 # visualize similarities between internal representations during learning and retrieval, relative to original data similarity
-def getLearningCovarianceMatrices(net, data):
+def get_learning_covariance_matrices(net, data):
   y_matrix, out_matrix = net.learn_patterns(data)
 
   plt.figure()
@@ -303,3 +303,22 @@ def visualize_data_similarity_structure(data, num_active, num_flips=None):
   plt.hist(pairwise_sims, bins=40, range=(0., 1.), density=True)
   plt.axvline(mean_sim, color='red', lw=2.5, linestyle='dashed')
   
+
+def auc_trapezoid(signal_counts, baseline_counts):
+    """
+    Geometric route: build the ROC and integrate.
+    signal_counts[k], baseline_counts[k] = number of observations
+    with score exactly k, for k = 0..K.
+    """
+    s = np.asarray(signal_counts, dtype=float)
+    b = np.asarray(baseline_counts, dtype=float)
+
+    # compute CDFs for baseline and signals, and prepend the origin (threshold above the maximum score).
+    F_b = np.cumsum(b) / b.sum()
+    F_s = np.cumsum(s) / s.sum()
+
+    F_b = np.r_[0.0, F_b]
+    F_s = np.r_[0.0, F_s]
+
+
+    return 1. - np.trapezoid(F_s, F_b)   # np.trapz on numpy < 2.0
