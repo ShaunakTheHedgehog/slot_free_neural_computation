@@ -866,6 +866,8 @@ def run_analysis():
                     help='[dprime] number of trials per sample')
     ap.add_argument('--uniform_baseline', action='store_true',
                     help='also evaluate an unstructured uniform pseudo-pattern baseline (clustered data)')
+    ap.add_argument('--pseudo_diff_categs', action='store_true',
+                        help='specifies that pseudo-patterns should be drawn from different categories than the real patterns (clustered data)')
     ap.add_argument('--nonlinearity_type', choices=['hard_k', 'random'], default='hard_k',
                     help='hidden-layer rule (note: only affects the retrieval analysis)')
     ap.add_argument('--order_match', choices=['True', 'False'], default='False',
@@ -885,6 +887,7 @@ def run_analysis():
         random.seed(args.seed)
 
     order_match = args.order_match == 'True'
+    use_pseudo_from_same_categs = not args.pseudo_diff_categs
 
     two_runsets = args.runset2 is not None
     save_data = True
@@ -902,7 +905,8 @@ def run_analysis():
             num_burn_in=args.num_burn_in, data_type=args.data_type, num_flips=args.num_flips,
             num_categories=args.num_categories, uniform_baseline=args.uniform_baseline,
             nonlinearity_type=args.nonlinearity_type, order_match=order_match,
-            seed=args.seed, save_data=save_data, filename=args.filename, results_dir=args.results_dir)
+            seed=args.seed, save_data=save_data, filename=args.filename, results_dir=args.results_dir, 
+            use_pseudo_from_same_categs=use_pseudo_from_same_categs)
 
     if args.analysis == 'retrieval':
         filename = args.filename or f'retrieval_{args.data_type}_cue{args.cue_level}_nummems{args.num_mems}_flips{args.num_flips}'
@@ -910,14 +914,16 @@ def run_analysis():
             args.runset1, args.runset2, args.num_trials, args.num_mems, args.cue_level,
             num_burn_in=args.num_burn_in, save_data=save_data, filename=filename, two_runsets=two_runsets,
             data_type=args.data_type, num_flips=args.num_flips, num_categories=args.num_categories,
-            uniform_baseline=args.uniform_baseline, nonlinearity_type=args.nonlinearity_type, order_match=order_match)
+            uniform_baseline=args.uniform_baseline, nonlinearity_type=args.nonlinearity_type, order_match=order_match,
+            use_pseudo_from_same_categs=use_pseudo_from_same_categs)
 
     filename = args.filename or f'dprime_{args.data_type}_cue{args.cue_level}_nummems{args.num_mems}_samples{args.num_samples}_runs{args.num_runs_per_sample}_flips{args.num_flips}'
     return run_comparison_test(
         args.runset1, args.runset2, args.num_mems, args.num_samples, args.num_runs_per_sample, args.cue_level,
         num_burn_in=args.num_burn_in, data_type=args.data_type, num_flips=args.num_flips,
         num_categories=args.num_categories, uniform_baseline=args.uniform_baseline,
-        save_data=save_data, filename=filename, two_runsets=two_runsets, order_match=order_match)
+        save_data=save_data, filename=filename, two_runsets=two_runsets, order_match=order_match,
+        use_pseudo_from_same_categs=use_pseudo_from_same_categs)
 
 
 '''
