@@ -906,7 +906,7 @@ def run_analysis():
             num_categories=args.num_categories, uniform_baseline=args.uniform_baseline,
             nonlinearity_type=args.nonlinearity_type, order_match=order_match,
             seed=args.seed, save_data=save_data, filename=args.filename, results_dir=args.results_dir, 
-            use_pseudo_from_same_categs=use_pseudo_from_same_categs)
+            use_pseudo_from_same_categories=use_pseudo_from_same_categs)
 
     if args.analysis == 'retrieval':
         filename = args.filename or f'retrieval_{args.data_type}_cue{args.cue_level}_nummems{args.num_mems}_flips{args.num_flips}'
@@ -915,7 +915,7 @@ def run_analysis():
             num_burn_in=args.num_burn_in, save_data=save_data, filename=filename, two_runsets=two_runsets,
             data_type=args.data_type, num_flips=args.num_flips, num_categories=args.num_categories,
             uniform_baseline=args.uniform_baseline, nonlinearity_type=args.nonlinearity_type, order_match=order_match,
-            use_pseudo_from_same_categs=use_pseudo_from_same_categs)
+            use_pseudo_from_same_categories=use_pseudo_from_same_categs)
 
     filename = args.filename or f'dprime_{args.data_type}_cue{args.cue_level}_nummems{args.num_mems}_samples{args.num_samples}_runs{args.num_runs_per_sample}_flips{args.num_flips}'
     return run_comparison_test(
@@ -923,7 +923,7 @@ def run_analysis():
         num_burn_in=args.num_burn_in, data_type=args.data_type, num_flips=args.num_flips,
         num_categories=args.num_categories, uniform_baseline=args.uniform_baseline,
         save_data=save_data, filename=filename, two_runsets=two_runsets, order_match=order_match,
-        use_pseudo_from_same_categs=use_pseudo_from_same_categs)
+        use_pseudo_from_same_categories=use_pseudo_from_same_categs)
 
 
 '''
