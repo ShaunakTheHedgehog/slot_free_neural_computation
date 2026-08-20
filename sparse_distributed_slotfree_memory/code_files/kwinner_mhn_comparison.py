@@ -1,4 +1,5 @@
 import numpy as np
+import os
 import sys
 import random
 import argparse
@@ -83,18 +84,34 @@ d_prime_out                 :       the trial-averaged d' across memory age
 out_diff                    :       the trial-averaged raw differences across memory age
 unif_results                :       a dictionary of similarly trial-averaged measurements for uniform random pseudo-patterns, if needed
 '''
-def get_match_probabilities(runset, num_trials, num_mems, cue_level, in_steady_state=True, num_burn_in=NUM_BURN_IN,
-                            data_type='random', num_flips=None, num_categories=10, 
-                            uniform_baseline=False, nonlinearity_type='hard_k', use_pseudo_from_same_categories=True, order_match=False):
+'''
+Run 'num_trials' independent realizations of a single model and record the raw retrieval results.
+Each realization uses a freshly initialized network and a freshly generated dataset (burn-in patterns,
+recent patterns to be evaluated, and untrained pseudo-patterns).
+
+This is the single expensive routine in the codebase: everything downstream (retrieval accuracy,
+d', raw differences, AUC) is derived from what it returns. It reports raw *integer overlap counts*
+rather than accuracies, so that AUC histograms can be binned exactly; divide by 's' for accuracies.
+
+Arguments: see get_match_probabilities (identical meanings)
+
+Returns: (each of shape num_trials x num_mems, holding integer overlaps in 0...s)
+real_overlaps       :       overlap between each real pattern and its retrieved output
+pseudo_overlaps     :       the same for the untrained pseudo-patterns
+unif_overlaps       :       the same for uniform, unstructured pseudo-patterns (all zeros unless
+                            the data is structured and 'uniform_baseline' is True)
+'''
+def simulate_trials(runset, num_trials, num_mems, cue_level, in_steady_state=True, num_burn_in=NUM_BURN_IN,
+                    data_type='random', num_flips=None, num_categories=10,
+                    uniform_baseline=False, nonlinearity_type='hard_k', use_pseudo_from_same_categories=True, order_match=False):
     assert nonlinearity_type in ['hard_k', 'random']
     data_clustered = (data_type != 'random')
     (n_i, n_h, s, f, k, epsilon) = runset
     length = n_i
     num_active = s
-    out_matches = np.zeros((num_trials, num_mems))
-    pseudo_out_matches = np.zeros((num_trials, num_mems))
-    unif_pseudo_out_matches = np.zeros((num_trials, num_mems))
-
+    real_overlaps = np.zeros((num_trials, num_mems))
+    pseudo_overlaps = np.zeros((num_trials, num_mems))
+    unif_overlaps = np.zeros((num_trials, num_mems))
 
     for i in range(num_trials):
 
@@ -102,25 +119,13 @@ def get_match_probabilities(runset, num_trials, num_mems, cue_level, in_steady_s
         net = KWinnerNet(n_i, n_h, 1. * s /n_i, f, k, epsilon, nonlinearity_type=nonlinearity_type)
 
         # generate dataset of patterns, whether structured or random
-        # full_data = None
-        # if data_clustered:
-        #     num_data = 7 * num_mems
-        #     tree = NestedTreeNode(pattern_input_size=n_i, pattern_sparsity=1.*s/n_i, num_flips=num_flips)
-        #     full_data = tree.get_clustered_data(num_data=num_data)
-        # else:
-        #     full_data = generateData(3 * num_mems + 1, n_i, s)
-
-        # full_data = shuffleData(full_data)
-        # steady_state_data = full_data[:num_mems]
-        # data = full_data[num_mems:2 * num_mems]
-        # pseudodata = full_data[2 * num_mems:3 * num_mems + 1]
         steady_state_data, data, pseudodata = generate_specific_dataset(length, num_active, data_type, num_flips, num_categories,
-                                                                        num_burn_in=num_burn_in, num_eval=num_mems, 
+                                                                        num_burn_in=num_burn_in, num_eval=num_mems,
                                                                         pseudo_from_same_categories=use_pseudo_from_same_categories, order_match=order_match)
 
         if data_clustered and uniform_baseline is True:
             unif_pseudodata = generate_data(num_mems, n_i, s)
-            
+
         # get K-winner MHN into "steady state" by learning pre-existing patterns if needed
         if in_steady_state:
             _, _ = net.learn_patterns(steady_state_data)
@@ -130,18 +135,36 @@ def get_match_probabilities(runset, num_trials, num_mems, cue_level, in_steady_s
             out = net.forward(data[j].reshape((-1, 1)), phase="learning")
 
 
-        # evaluate output pattern completion abilities for both real and pseudo data 
-        _, out_retrieve = net.retrieve_from_partial_cues(data, cue_level)  
-        _, pseudo_out_retrieve = net.retrieve_from_partial_cues(pseudodata, cue_level)  
+        # evaluate output pattern completion abilities for both real and pseudo data
+        _, out_retrieve = net.retrieve_from_partial_cues(data, cue_level)
+        _, pseudo_out_retrieve = net.retrieve_from_partial_cues(pseudodata, cue_level)
 
         # if the data is structured and the uniform, random pattern is needed, also evaluate pattern completion abilities in this case
         if data_clustered and uniform_baseline is True:
             _, unif_pseudo_out_retrieve = net.retrieve_from_partial_cues(unif_pseudodata, cue_level)
-            unif_pseudo_out_matches[i] = 1. * np.sum(unif_pseudodata * unif_pseudo_out_retrieve, axis=1) / s
+            unif_overlaps[i] = np.sum(unif_pseudodata * unif_pseudo_out_retrieve, axis=1)
 
-        out_matches[i] = 1. * np.sum(data * out_retrieve, axis=1) / s
-        pseudo_out_matches[i] = 1. * np.sum(pseudodata * pseudo_out_retrieve, axis=1) / s
+        real_overlaps[i] = np.sum(data * out_retrieve, axis=1)
+        pseudo_overlaps[i] = np.sum(pseudodata * pseudo_out_retrieve, axis=1)
 
+    return real_overlaps, pseudo_overlaps, unif_overlaps
+
+
+def get_match_probabilities(runset, num_trials, num_mems, cue_level, in_steady_state=True, num_burn_in=NUM_BURN_IN,
+                            data_type='random', num_flips=None, num_categories=10,
+                            uniform_baseline=False, nonlinearity_type='hard_k', use_pseudo_from_same_categories=True, order_match=False):
+    s = runset[2]
+
+    # run the simulations, then convert the raw overlaps into retrieval accuracies
+    real_overlaps, pseudo_overlaps, unif_overlaps = simulate_trials(runset, num_trials, num_mems, cue_level,
+                                                                    in_steady_state=in_steady_state, num_burn_in=num_burn_in,
+                                                                    data_type=data_type, num_flips=num_flips, num_categories=num_categories,
+                                                                    uniform_baseline=uniform_baseline, nonlinearity_type=nonlinearity_type,
+                                                                    use_pseudo_from_same_categories=use_pseudo_from_same_categories, order_match=order_match)
+
+    out_matches = 1. * real_overlaps / s
+    pseudo_out_matches = 1. * pseudo_overlaps / s
+    unif_pseudo_out_matches = 1. * unif_overlaps / s
 
     out_matches_mean = np.mean(out_matches, axis=0)
 
@@ -253,6 +276,98 @@ def run_comparison_test(runset1, runset2, num_mems, num_samples, num_runs_per_sa
     return results_dict
 
 
+# build a fully explicit, collision-proof filename encoding every parameter of a raw collection run
+def build_raw_filename(runset1, runset2, meta):
+    def _rs(rs):
+        if rs is None:
+            return 'none'
+        (n_i, n_h, s, f, k, eps) = rs
+        return f'{n_i}x{n_h}s{s}k{k}f{f}e{eps}'
+    m = meta
+    return (f"raw_{m['data_type']}"
+            f"_kwin{_rs(runset1)}_mhn{_rs(runset2)}"
+            f"_cue{m['cue_level']}_mems{m['num_mems']}_burn{m['num_burn_in']}"
+            f"_samp{m['num_samples']}_runs{m['num_runs_per_sample']}"
+            f"_flips{m['num_flips']}_cats{m['num_categories']}"
+            f"_om{int(m['order_match'])}_ub{int(m['uniform_baseline'])}"
+            f"_ps{int(m['pseudo_from_same_categories'])}_nl{m['nonlinearity_type']}"
+            f"_seed{m['seed']}")
+
+
+'''
+Collect and save the raw retrieval results for both models, without computing any summary statistic.
+This is the expensive simulation stage: 'num_samples' x 'num_runs_per_sample' independent realizations
+are run per model (as in run_comparison_test, each model gets its own freshly generated datasets), and
+the raw integer overlaps are stored. All downstream curves -- retrieval accuracy, d', raw differences
+and AUC -- are then derived cheaply from the saved file by retrieval_analyses.py.
+
+Arguments: as in run_comparison_test, plus
+seed            :       seed applied to both RNGs before any simulation (None leaves them unseeded)
+results_dir     :       directory in which to save the raw results (created if absent)
+
+Returns a dictionary holding the raw overlaps for both models along with the full run metadata.
+'''
+def run_raw_collection(runset1, runset2, num_mems, num_samples, num_runs_per_sample, cue_level,
+                       num_burn_in=NUM_BURN_IN, data_type='random', num_flips=None, num_categories=10,
+                       uniform_baseline=False, nonlinearity_type='hard_k', use_pseudo_from_same_categories=True,
+                       order_match=False, seed=None, save_data=True, filename=None, results_dir='retrieval_data'):
+    # the AUC histograms are binned over 0...s, so both models must share the same pattern sparsity
+    if runset2 is not None:
+        assert runset1[2] == runset2[2], 'both runsets must use the same number of active bits (s)'
+        assert runset1[0] == runset2[0], 'both runsets must use the same pattern length (n_i)'
+
+    num_active = runset1[2]
+    two_runsets = runset2 is not None
+
+    # raw overlaps are integers in 0...s, so uint16 is exact and keeps the saved file small
+    def _alloc():
+        return np.zeros((num_samples, num_runs_per_sample, num_mems), dtype=np.uint16)
+
+    raw = {'kwin_real': _alloc(), 'kwin_pseudo': _alloc(), 'kwin_unif': _alloc() if uniform_baseline else None,
+           'mhn_real': _alloc() if two_runsets else None, 'mhn_pseudo': _alloc() if two_runsets else None,
+           'mhn_unif': _alloc() if (two_runsets and uniform_baseline) else None}
+
+    sim_kwargs = dict(in_steady_state=True, num_burn_in=num_burn_in, data_type=data_type, num_flips=num_flips,
+                      num_categories=num_categories, uniform_baseline=uniform_baseline,
+                      nonlinearity_type=nonlinearity_type, use_pseudo_from_same_categories=use_pseudo_from_same_categories,
+                      order_match=order_match)
+
+    for i in range(num_samples):
+        real, pseudo, unif = simulate_trials(runset1, num_runs_per_sample, num_mems, cue_level, **sim_kwargs)
+        raw['kwin_real'][i] = np.rint(real).astype(np.uint16)
+        raw['kwin_pseudo'][i] = np.rint(pseudo).astype(np.uint16)
+        if uniform_baseline:
+            raw['kwin_unif'][i] = np.rint(unif).astype(np.uint16)
+
+        if two_runsets:
+            real, pseudo, unif = simulate_trials(runset2, num_runs_per_sample, num_mems, cue_level, **sim_kwargs)
+            raw['mhn_real'][i] = np.rint(real).astype(np.uint16)
+            raw['mhn_pseudo'][i] = np.rint(pseudo).astype(np.uint16)
+            if uniform_baseline:
+                raw['mhn_unif'][i] = np.rint(unif).astype(np.uint16)
+
+        print("Sample " + str(i+1) + ' of ' + str(num_samples) + ' done', flush=True)
+
+    raw['meta'] = {'runset1': runset1, 'runset2': runset2, 'num_active': num_active,
+                   'num_mems': num_mems, 'num_burn_in': num_burn_in, 'num_samples': num_samples,
+                   'num_runs_per_sample': num_runs_per_sample, 'cue_level': cue_level,
+                   'data_type': data_type, 'num_flips': num_flips, 'num_categories': num_categories,
+                   'order_match': order_match, 'uniform_baseline': uniform_baseline,
+                   'pseudo_from_same_categories': use_pseudo_from_same_categories,
+                   'nonlinearity_type': nonlinearity_type, 'seed': seed}
+
+    if save_data:
+        if filename is None:
+            filename = build_raw_filename(runset1, runset2, raw['meta'])
+        os.makedirs(results_dir, exist_ok=True)
+        full_filename = os.path.join(results_dir, f'{filename}.pkl')
+        with open(full_filename, 'wb') as file:
+            pkl.dump(raw, file)
+        print(f'saved raw retrieval data to {full_filename}', flush=True)
+
+    return raw
+
+
 '''
 Run a one-tailed t-test.
 Arguments:
@@ -309,34 +424,50 @@ lw                  :       line width for empirical curves
 theory_lw           :       line width for theoretical / regression curves
 figsize             :       size of plot
 '''
-def plot_data(kwinner_data, samhn_data, plot_title, max_age=1000,
-              plot_xlabel='100% Cues', plot_ylabel='d\'', plot_rel_advantages=True, plot_mode=None, ylim=None,
-              with_regression=False, regression_idxs=200, mhn_runset=None, cue_level=1.0, plot_main_data=True, lw=2.2, theory_lw=2.5, figsize=None):
+def plot_data(kwinner_data, mhn_data, plot_title, max_age=1000,
+              plot_xlabel='100% Cues', plot_ylabel='d\'', plot_rel_advantages=True, plot_mode=None, ylim=None, ylim_bottom=None,
+              with_regression=False, regression_idxs=200, mhn_runset=None, cue_level=1.0, plot_main_data=True, lw=2.2, theory_lw=2.5, figsize=None, show_median=False):
+
+    # AUC lives in [0, 1], so it needs a different vertical range than d' or raw differences
+    is_auc = plot_ylabel.startswith('AUC')
+
+    # heights at which the two rows of significance markers are drawn, just below the plotted curves
+    if plot_ylabel == 'Raw Difference':
+        dot_y_kwinner, dot_y_mhn = -0.05, -0.05
+    elif is_auc:
+        _bottom = 0.4 if ylim_bottom is None else ylim_bottom
+        dot_y_kwinner, dot_y_mhn = _bottom + 0.012, _bottom + 0.002
+    else:
+        dot_y_kwinner, dot_y_mhn = -0.38, -0.4
 
     kwinner_data = np.flip(kwinner_data, axis=1)
 
     num_samples = kwinner_data.shape[0]
 
-    samhn_data = np.flip(samhn_data, axis=1)
+    mhn_data = np.flip(mhn_data, axis=1)
 
     mean_kwinner_data = np.mean(kwinner_data, axis=0)
     kwinner_std_error = np.std(kwinner_data, axis=0) / np.sqrt(kwinner_data.shape[0])
+    median_kwinner_data = np.median(kwinner_data, axis=0)
+    plot_kwinner_data = median_kwinner_data if show_median else mean_kwinner_data
 
-    mean_samhn_data = np.mean(samhn_data, axis=0)
-    samhn_std_error = np.std(samhn_data, axis=0) / np.sqrt(samhn_data.shape[0])
+    mean_mhn_data = np.mean(mhn_data, axis=0)
+    mhn_std_error = np.std(mhn_data, axis=0) / np.sqrt(mhn_data.shape[0])
+    median_mhn_data = np.median(mhn_data, axis=0)
+    plot_mhn_data = median_mhn_data if show_median else mean_mhn_data
 
-    if plot_rel_advantages:
-        data_diffs = kwinner_data - samhn_data
+    if plot_rel_advantages and not show_median:
+        data_diffs = kwinner_data - mhn_data
         t_vals = np.mean(data_diffs, axis=0) / (np.std(data_diffs, axis=0) / np.sqrt(data_diffs.shape[0]))
-        kwinner_better_inds, samhn_better_inds = get_one_tailed_significance_indices(t_vals, df=num_samples-1, alpha=0.01)
+        kwinner_better_inds, mhn_better_inds = get_one_tailed_significance_indices(t_vals, df=num_samples-1, alpha=0.01)
         kwinner_better_inds = np.asarray(kwinner_better_inds) + 1
 
-        samhn_better_inds = np.asarray(samhn_better_inds) + 1
+        mhn_better_inds = np.asarray(mhn_better_inds) + 1
 
         np.set_printoptions(threshold=sys.maxsize)
 
         print(kwinner_better_inds)
-        print(samhn_better_inds)
+        print(mhn_better_inds)
 
     if with_regression and plot_mode == 'log_y':
         max_age = 350
@@ -350,28 +481,22 @@ def plot_data(kwinner_data, samhn_data, plot_title, max_age=1000,
 
 
     if plot_main_data:
-        plt.plot(ages, mean_kwinner_data[:max_age], label="K-Winner MHN", color='red', lw=lw)
-        if not with_regression:
+        plt.plot(ages, plot_kwinner_data[:max_age], label="K-Winner MHN", color='red', lw=lw)
+        if not with_regression and not show_median:
             plt.fill_between(ages, mean_kwinner_data[:max_age] - kwinner_std_error[:max_age], mean_kwinner_data[:max_age] + kwinner_std_error[:max_age], color='cyan')
 
-    if plot_rel_advantages:
-        if plot_ylabel == 'Raw Difference':
-            plt.scatter(kwinner_better_inds, -0.05*np.ones_like(kwinner_better_inds), s=1, color='red')
-        else:
-            plt.scatter(kwinner_better_inds, -0.38*np.ones_like(kwinner_better_inds), s=1, color='red')
+    if plot_rel_advantages and not show_median:
+        plt.scatter(kwinner_better_inds, dot_y_kwinner*np.ones_like(kwinner_better_inds), s=1, color='red')
 
 
     if plot_main_data:
-        plt.plot(ages, mean_samhn_data[:max_age], label="Original MHN", color='gray', lw=lw)
-        if not with_regression:
-            plt.fill_between(ages, mean_samhn_data[:max_age] - samhn_std_error[:max_age], mean_samhn_data[:max_age] + samhn_std_error[:max_age], color='cyan')
+        plt.plot(ages, plot_mhn_data[:max_age], label="Original MHN", color='gray', lw=lw)
+        if not with_regression and not show_median:
+            plt.fill_between(ages, mean_mhn_data[:max_age] - mhn_std_error[:max_age], mean_mhn_data[:max_age] + mhn_std_error[:max_age], color='cyan')
 
 
-    if plot_rel_advantages:
-        if plot_ylabel == 'Raw Difference':
-            plt.scatter(samhn_better_inds, -0.05*np.ones_like(samhn_better_inds), s=1, color='black')
-        else:
-            plt.scatter(samhn_better_inds, -0.4*np.ones_like(samhn_better_inds), s=1, color='black')
+    if plot_rel_advantages and not show_median:
+        plt.scatter(mhn_better_inds, dot_y_mhn*np.ones_like(mhn_better_inds), s=1, color='black')
 
 
     if with_regression and mhn_runset is not None:
@@ -379,9 +504,9 @@ def plot_data(kwinner_data, samhn_data, plot_title, max_age=1000,
         print("K-Winner regression constants: ")
         regressed_kwinner_data = exponential_regress_data(mean_kwinner_data[:max_age], regression_idxs)
         print("MHN regression constants: ")
-        regressed_samhn_data = exponential_regress_data(mean_samhn_data[:max_age], regression_idxs)
+        regressed_mhn_data = exponential_regress_data(mean_mhn_data[:max_age], regression_idxs)
         plt.plot(ages, regressed_kwinner_data, color='orange', label="Regressed K-Winner", lw=theory_lw, linestyle='--')
-        plt.plot(ages, regressed_samhn_data, color='black', label="Regressed MHN", lw=theory_lw, linestyle='--')
+        plt.plot(ages, regressed_mhn_data, color='black', label="Regressed MHN", lw=theory_lw, linestyle='--')
 
 
         (n_i, n_h, s, f, k, epsilon) = mhn_runset
@@ -406,8 +531,10 @@ def plot_data(kwinner_data, samhn_data, plot_title, max_age=1000,
 
     else:
         if ylim is None:
-            ylim = 10.
-        plt.ylim(bottom=-0.5, top=ylim)
+            ylim = 1.0 if is_auc else 10.
+        if ylim_bottom is None:
+            ylim_bottom = 0.4 if is_auc else -0.5
+        plt.ylim(bottom=ylim_bottom, top=ylim)
     plt.xlim(0, 1000)
 
     if not with_regression:
@@ -715,8 +842,8 @@ Example:
 '''
 def run_analysis():
     ap = argparse.ArgumentParser(description="Run a K-winner MHN analysis (retrieval accuracy or d'/raw-diff).")
-    ap.add_argument('--analysis', choices=['retrieval', 'dprime'], required=True,
-                    help='which routine to run')
+    ap.add_argument('--analysis', choices=['retrieval', 'dprime', 'raw'], required=True,
+                    help="which routine to run ('raw' saves the raw retrieval data for later analysis)")
     ap.add_argument('--runset1', type=_parse_runset, required=True,
                     help="K-winner MHN runset as 'n_i,n_h,s,f,k,epsilon'")
     ap.add_argument('--runset2', type=_parse_runset, default=None,
@@ -745,8 +872,17 @@ def run_analysis():
                     help='whether to match the order of real and pseudo patterns in the retrieval analysis')
     ap.add_argument('--filename', type=str, default=None,
                     help='output filename (without .pkl); a descriptive default is used if omitted')
+    ap.add_argument('--seed', type=int, default=None,
+                    help='seed applied once to both RNGs before any simulation (omit to leave unseeded)')
+    ap.add_argument('--results_dir', type=str, default='retrieval_data',
+                    help="[raw] directory for the saved raw retrieval data (created if absent)")
     # ap.add_argument('--no_save', action='store_true', help='do not write the results .pkl')
     args = ap.parse_args()
+
+    # seed exactly once, here, so every downstream draw comes from one reproducible stream
+    if args.seed is not None:
+        np.random.seed(args.seed)
+        random.seed(args.seed)
 
     order_match = args.order_match == 'True'
 
@@ -759,6 +895,14 @@ def run_analysis():
         assert args.num_mems % args.num_categories == 0, "num_mems must be divisible by num_categories for correlated data"
     if args.data_type != 'random':
         assert args.num_flips is not None, "num_flips must be specified for correlated/tree data"
+
+    if args.analysis == 'raw':
+        return run_raw_collection(
+            args.runset1, args.runset2, args.num_mems, args.num_samples, args.num_runs_per_sample, args.cue_level,
+            num_burn_in=args.num_burn_in, data_type=args.data_type, num_flips=args.num_flips,
+            num_categories=args.num_categories, uniform_baseline=args.uniform_baseline,
+            nonlinearity_type=args.nonlinearity_type, order_match=order_match,
+            seed=args.seed, save_data=save_data, filename=args.filename, results_dir=args.results_dir)
 
     if args.analysis == 'retrieval':
         filename = args.filename or f'retrieval_{args.data_type}_cue{args.cue_level}_nummems{args.num_mems}_flips{args.num_flips}'

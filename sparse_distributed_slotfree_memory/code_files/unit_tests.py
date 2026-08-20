@@ -14,6 +14,7 @@ and the core K-winner MHN model (kwinnernet.py).
 '''
 
 import unittest
+import copy
 import random
 
 import numpy as np
@@ -29,6 +30,7 @@ from utils import (
     shuffle_data,
     calculate_diagonal_statistics,
     calculate_offdiagonal_statistics,
+    auc_trapezoid,
 )
 from data import (
     generate_data,
@@ -211,16 +213,53 @@ class TestDatasetBuilders(unittest.TestCase):
         self._check_splits(burn_in, train, pseudo, length, num_active)
 
     def test_correlated_dataset_shares_categories(self):
-        # burn-in and recent-training patterns come from the SAME categories, whereas the
-        # pseudo-patterns come from other categories -> burn-in should match train far better
+        # with pseudo_from_same_categories=False the pseudo-patterns come from a separate set of
+        # categories, so burn-in patterns should match the training patterns far better than those
         _seed(1)
         length, num_active, num_flips = 300, 30, 3
         burn_in, train, pseudo = generate_correlated_dataset(length, num_active, num_flips,
-                                                             num_categories=10)
+                                                             num_categories=10,
+                                                             pseudo_from_same_categories=False)
         sample = burn_in[:200]
         best_with_train = np.mean((sample @ train.T).max(axis=1))
         best_with_pseudo = np.mean((sample @ pseudo.T).max(axis=1))
         self.assertGreater(best_with_train, best_with_pseudo + num_active / 2)
+
+    def test_correlated_dataset_pseudo_from_same_categories(self):
+        # with the default (same categories), pseudo-patterns should match the training patterns
+        # about as well as the training patterns match each other
+        _seed(1)
+        length, num_active, num_flips = 300, 30, 3
+        burn_in, train, pseudo = generate_correlated_dataset(length, num_active, num_flips,
+                                                             num_categories=10,
+                                                             pseudo_from_same_categories=True)
+        sample = burn_in[:200]
+        best_with_train = np.mean((sample @ train.T).max(axis=1))
+        best_with_pseudo = np.mean((sample @ pseudo.T).max(axis=1))
+        self.assertLess(abs(best_with_train - best_with_pseudo), num_active / 2)
+
+    def test_correlated_dataset_order_match(self):
+        # order_match pairs each real pattern with a pseudo-pattern from the SAME category at the
+        # same position, so every matched pair must be far more similar than an arbitrary pair
+        _seed(2)
+        length, num_active, num_flips, num_categories = 300, 30, 3, 10
+        num_burn_in, num_eval = 100, 50
+        _, train, pseudo = generate_correlated_dataset(length, num_active, num_flips,
+                                                       num_categories=num_categories,
+                                                       num_burn_in=num_burn_in, num_eval=num_eval,
+                                                       order_match=True)
+        matched = np.sum(train * pseudo, axis=1)
+        # a same-category pair differs by at most 2*num_flips bits on each side of the prototype
+        self.assertTrue(np.all(matched >= num_active - 4 * num_flips))
+        # and matched pairs must clearly beat the average unmatched pair
+        cross = train @ pseudo.T
+        unmatched_mean = cross[~np.eye(num_eval, dtype=bool)].mean()
+        self.assertGreater(matched.mean(), unmatched_mean + num_active / 2)
+
+    def test_order_match_requires_same_categories(self):
+        with self.assertRaises(AssertionError):
+            generate_correlated_dataset(200, 20, 2, num_categories=5, num_burn_in=50, num_eval=10,
+                                        pseudo_from_same_categories=False, order_match=True)
 
     def test_tree_dataset(self):
         _seed(0)
@@ -258,6 +297,18 @@ class TestNestedTreeNode(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # kwinnernet.py
 # ---------------------------------------------------------------------------
+'''
+The original full-matrix form of the K-winner MHN weight update, kept here purely as a
+reference implementation. KWinnerNet.__adjust_weights was optimized to touch only the k
+winning rows of W_xy (and columns of W_yx), since every other row is multiplied by y=0;
+the tests below guard that the optimization stays bit-for-bit equivalent to this rule.
+'''
+def _reference_adjust_weights(W_xy, W_yx, arch, y, x, eta):
+    W_xy_new = W_xy + eta * (np.outer(y, x) - W_xy * y) * arch
+    W_yx_new = W_yx + eta * (np.outer(x, y) - W_yx * y.T) * arch.T
+    return W_xy_new, W_yx_new
+
+
 class TestKWinnerNet(unittest.TestCase):
 
     def _make_net(self, input_size=100, hidden_size=200, num_active=10,
@@ -315,6 +366,154 @@ class TestKWinnerNet(unittest.TestCase):
         before = net.W_xy.copy()
         net.retrieve_patterns(data)
         self.assertTrue(np.array_equal(before, net.W_xy))
+
+    def test_sparse_weight_update_matches_full_update(self):
+        # the optimized (winners-only) weight update must reproduce the original full-matrix
+        # rule exactly, across a range of network shapes, fan-in ratios and learning rates
+        for (n_i, n_h, num_active, f, k, eta) in [(100, 200, 10, 1.0, 5, 1.0),
+                                                  (100, 200, 10, 0.3, 7, 0.35),
+                                                  (60, 40, 6, 0.5, 3, 0.7),
+                                                  (80, 50, 8, 1.0, 1, 1.0)]:
+            _seed(0)
+            net = self._make_net(input_size=n_i, hidden_size=n_h, num_active=num_active,
+                                 fan_in_ratio=f, k=k, eta=eta)
+            for _ in range(5):
+                x = generate_data(1, n_i, num_active)[0].reshape(-1, 1)
+                # a retrieval pass sets the hidden state without touching the weights
+                net.forward(x, phase='retrieval')
+                expected_xy, expected_yx = _reference_adjust_weights(
+                    net.W_xy.copy(), net.W_yx.copy(), net.W_xy_architecture, net.y, x, net.eta)
+                net._KWinnerNet__adjust_weights(x)
+                self.assertTrue(np.array_equal(net.W_xy, expected_xy))
+                self.assertTrue(np.array_equal(net.W_yx, expected_yx))
+
+    def test_sparse_weight_update_matches_for_arbitrary_hidden_state(self):
+        # covers the 'random' k-winner rule, where the winners are not the top-k logits
+        _seed(0)
+        n_i, n_h, k = 100, 200, 5
+        net = self._make_net(input_size=n_i, hidden_size=n_h, num_active=10,
+                             fan_in_ratio=0.4, k=k, eta=0.5)
+        x = generate_data(1, n_i, 10)[0].reshape(-1, 1)
+        y = np.zeros((n_h, 1))
+        y[np.random.choice(n_h, k, replace=False)] = 1.
+        net.y = y
+        expected_xy, expected_yx = _reference_adjust_weights(
+            net.W_xy.copy(), net.W_yx.copy(), net.W_xy_architecture, net.y, x, net.eta)
+        net._KWinnerNet__adjust_weights(x)
+        self.assertTrue(np.array_equal(net.W_xy, expected_xy))
+        self.assertTrue(np.array_equal(net.W_yx, expected_yx))
+
+    def test_sparse_weight_update_matches_over_learning_sequence(self):
+        # errors could accumulate across sequential updates, so check a whole learning run
+        _seed(0)
+        n_i, num_active = 100, 10
+        net_a = self._make_net(input_size=n_i, hidden_size=200, num_active=num_active,
+                               fan_in_ratio=0.5, k=5, eta=0.3)
+        net_b = copy.deepcopy(net_a)
+        data = generate_data(50, n_i, num_active)
+
+        for j in range(data.shape[0]):
+            x = data[j].reshape(-1, 1)
+            net_a.forward(x, phase='learning')      # optimized winners-only update
+            # net_b picks the same top-k winners, then applies the reference update by hand
+            net_b.forward(x, phase='retrieval')
+            net_b.W_xy, net_b.W_yx = _reference_adjust_weights(
+                net_b.W_xy, net_b.W_yx, net_b.W_xy_architecture, net_b.y, x, net_b.eta)
+            self.assertTrue(np.array_equal(net_a.W_xy, net_b.W_xy), f'W_xy diverged at pattern {j}')
+            self.assertTrue(np.array_equal(net_a.W_yx, net_b.W_yx), f'W_yx diverged at pattern {j}')
+
+
+# ---------------------------------------------------------------------------
+# AUC and the raw-data analysis pipeline (utils.py, retrieval_analyses.py)
+# ---------------------------------------------------------------------------
+class TestAUC(unittest.TestCase):
+
+    def test_auc_matches_mann_whitney(self):
+        # AUC computed from histograms must equal the Mann-Whitney U statistic normalized by
+        # n1*n2, which is the standard definition (and credits ties with 0.5)
+        from scipy.stats import mannwhitneyu
+        rng = np.random.default_rng(0)
+        for _ in range(5):
+            real = rng.integers(0, 101, size=20)
+            pseudo = rng.integers(0, 101, size=20)
+            auc = auc_trapezoid(np.bincount(real, minlength=101), np.bincount(pseudo, minlength=101))
+            u = mannwhitneyu(real, pseudo, alternative='greater').statistic
+            self.assertAlmostEqual(auc, u / (len(real) * len(pseudo)), places=10)
+
+    def test_auc_edge_cases(self):
+        from retrieval_analyses import aucs_across_ages
+        num_active = 10
+        high = np.full((5, 3), num_active)
+        low = np.zeros((5, 3), dtype=int)
+        same = np.tile(np.array([[4, 5, 6]]), (5, 1))
+        # perfectly separated, identical, and perfectly reversed distributions
+        self.assertTrue(np.allclose(aucs_across_ages(high, low, num_active), 1.0))
+        self.assertTrue(np.allclose(aucs_across_ages(same, same, num_active), 0.5))
+        self.assertTrue(np.allclose(aucs_across_ages(low, high, num_active), 0.0))
+
+    def test_auc_curves_shape(self):
+        from retrieval_analyses import auc_curves
+        _seed(0)
+        num_samples, num_runs, num_mems, num_active = 3, 6, 8, 10
+        real = np.random.randint(0, num_active + 1, (num_samples, num_runs, num_mems))
+        pseudo = np.random.randint(0, num_active + 1, (num_samples, num_runs, num_mems))
+        out = auc_curves(real, pseudo, num_active)
+        self.assertEqual(out.shape, (num_samples, num_mems))
+        self.assertTrue(np.all((out >= 0.) & (out <= 1.)))
+
+
+class TestRawAnalysisPipeline(unittest.TestCase):
+
+    def test_dprime_and_rawdiff_from_raw_match_get_match_probabilities(self):
+        # the two-stage pipeline (simulate -> save raw -> derive curves) must reproduce the d' and
+        # raw differences that the original single-stage routine computes
+        import kwinner_mhn_comparison as K
+        from retrieval_analyses import dprime_curves, rawdiff_curves
+
+        runset = (200, 400, 20, 0.2, 5, 0.5)
+        num_active = runset[2]
+
+        _seed(3)
+        _, _, dprime_ref, rawdiff_ref, _ = K.get_match_probabilities(
+            runset, 6, 12, 1.0, num_burn_in=40, data_type='random')
+
+        _seed(3)
+        real, pseudo, _ = K.simulate_trials(runset, 6, 12, 1.0, num_burn_in=40, data_type='random')
+
+        dprime_raw = dprime_curves(real[None, :, :], pseudo[None, :, :], num_active)[0]
+        rawdiff_raw = rawdiff_curves(real[None, :, :], pseudo[None, :, :], num_active)[0]
+
+        self.assertTrue(np.allclose(dprime_ref, dprime_raw, equal_nan=True))
+        self.assertTrue(np.allclose(rawdiff_ref, rawdiff_raw))
+
+    def test_raw_collection_shapes_and_metadata(self):
+        import kwinner_mhn_comparison as K
+        from retrieval_analyses import compute_curves
+
+        _seed(0)
+        runset1, runset2 = (200, 400, 20, 0.2, 5, 0.5), (200, 100, 20, 1.0, 1, 1.0)
+        num_samples, num_runs, num_mems = 2, 3, 10
+        raw = K.run_raw_collection(runset1, runset2, num_mems, num_samples, num_runs, 1.0,
+                                   num_burn_in=30, data_type='correlated', num_flips=2,
+                                   num_categories=5, uniform_baseline=True, save_data=False)
+
+        for key in ('kwin_real', 'kwin_pseudo', 'kwin_unif', 'mhn_real', 'mhn_pseudo', 'mhn_unif'):
+            self.assertEqual(raw[key].shape, (num_samples, num_runs, num_mems))
+            # overlaps are integer bit-match counts, so they must lie in 0...num_active
+            self.assertTrue(np.all(raw[key] <= runset1[2]))
+        self.assertEqual(raw['meta']['num_active'], runset1[2])
+
+        curves = compute_curves(raw)
+        for key in ('kwinner_dprimes', 'mhn_dprimes', 'kwinner_aucs', 'mhn_aucs',
+                    'kwinner_unif_aucs', 'kwin_out_accs'):
+            self.assertEqual(curves[key].shape, (num_samples, num_mems))
+
+    def test_raw_collection_rejects_mismatched_sparsity(self):
+        import kwinner_mhn_comparison as K
+        _seed(0)
+        with self.assertRaises(AssertionError):
+            K.run_raw_collection((200, 400, 20, 0.2, 5, 0.5), (200, 100, 15, 1.0, 1, 1.0),
+                                 10, 1, 1, 1.0, num_burn_in=20, save_data=False)
 
 
 if __name__ == '__main__':

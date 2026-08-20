@@ -304,6 +304,10 @@ def visualize_data_similarity_structure(data, num_active, num_flips=None):
   plt.axvline(mean_sim, color='red', lw=2.5, linestyle='dashed')
   
 
+# np.trapezoid was introduced in numpy 2.0; fall back to np.trapz on older versions
+_trapz = getattr(np, 'trapezoid', None) or np.trapz
+
+
 def auc_trapezoid(signal_counts, baseline_counts):
     """
     Geometric route: build the ROC and integrate.
@@ -321,4 +325,4 @@ def auc_trapezoid(signal_counts, baseline_counts):
     F_s = np.r_[0.0, F_s]
 
 
-    return 1. - np.trapezoid(F_s, F_b)   # np.trapz on numpy < 2.0
+    return 1. - _trapz(F_s, F_b)
