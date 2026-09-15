@@ -26,7 +26,7 @@ from baseline_tf import SimplifiedTransformerLayer, train_tf_batchmode
 # class implementing a 1-winner MHN built to operate in parallel over a batch of inputs
 class OneWinnerMHN(nn.Module):
     def __init__(self, batch_size, input_size, hidden_size, output_size, one_hot_input_size,
-                 input_sparsity=None, softmax_beta=1., debug_mode=False, input_proj_strength=1.0):
+                 input_sparsity=None, softmax_beta=1., debug_mode=False, input_proj_strength=1.0, item_in_mhn=False):
         super().__init__()
         '''
         Arguments:
@@ -54,15 +54,21 @@ class OneWinnerMHN(nn.Module):
         self.label_dim = output_size
 
         self.debug_mode = debug_mode
-
+        self.item_in_mhn = item_in_mhn
         W_hi = torch.zeros(batch_size, hidden_size, self.item_dim)
 
-        self.W_items = torch.zeros(hidden_size, self.one_hot_input_size)
+        self.W_items = None
         # in case of debug mode, set up W_items to directly project input one-hot vectors to MHN hidden layer
         if debug_mode:
-            num_context_tokens = 2 * int(self.one_hot_input_size / 3.)
-            self.W_items[:num_context_tokens, :num_context_tokens] = input_proj_strength * torch.eye(num_context_tokens)
-            self.W_items = self.W_items.unsqueeze(0).repeat(batch_size, 1, 1)
+            if self.item_in_mhn:
+                self.W_items = torch.zeros(batch_size, hidden_size, self.one_hot_input_size)
+                self.W_items = self.W_items.uniform_()
+            else:
+                self.W_items = torch.zeros(hidden_size, self.one_hot_input_size)
+                num_context_tokens = 2 * int(self.one_hot_input_size / 3.)
+                assert hidden_size >= num_context_tokens, "hidden_size must be >= number of context tokens in this case"
+                self.W_items[:num_context_tokens, :num_context_tokens] = input_proj_strength * torch.eye(num_context_tokens)
+                self.W_items = self.W_items.unsqueeze(0).repeat(batch_size, 1, 1)
             self.W_items = nn.Parameter(data=self.W_items)
         else:
             W_hi = W_hi.uniform_(0., 0.5)
@@ -86,29 +92,45 @@ class OneWinnerMHN(nn.Module):
 
     # updating MHN weights at a fixed timestep of processing (across a whole batch)
     # doing a one-winner-take-all weight update
-    def __adjust_weights(self, x_curr, z):
+    def __adjust_weights(self, z, x_curr, curr_context):
         # z is of shape batch_size x hidden_size
-        x_curr_item = x_curr[:, :self.item_dim]       # batch_size x item_dim
-        x_curr_label = x_curr[:, self.item_dim:]      # batch_size x label_dim
-        new_W_hi = self.W_hi.data + (torch.bmm(z.unsqueeze(-1), x_curr_item.unsqueeze(-2)) - self.W_hi.data * z.unsqueeze(-1))
-        new_W_oh = self.W_oh.data + (torch.bmm(x_curr_label.unsqueeze(-1), z.unsqueeze(-2)) - self.W_oh.data * z.unsqueeze(-2))
+        # x_curr_item = x_curr[:, :self.item_dim]       # batch_size x item_dim
+        # x_curr_label = x_curr[:, self.item_dim:]      # batch_size x label_dim
+        # new_W_hi = self.W_hi.data + (torch.bmm(z.unsqueeze(-1), x_curr_item.unsqueeze(-2)) - self.W_hi.data * z.unsqueeze(-1))
+        # new_W_oh = self.W_oh.data + (torch.bmm(x_curr_label.unsqueeze(-1), z.unsqueeze(-2)) - self.W_oh.data * z.unsqueeze(-2))
 
-        self.W_hi.data = new_W_hi
-        self.W_oh.data = new_W_oh
+        # self.W_hi.data = new_W_hi
+        # self.W_oh.data = new_W_oh
+
+        winners = z.argmax(dim=1)                     # (batch_size,)
+        batch_idx = torch.arange(z.shape[0], device=z.device)
+
+        self.W_hi.data[batch_idx, winners, :] = x_curr[:, :self.item_dim]    # batch_size x item_dim
+        self.W_oh.data[batch_idx, :, winners] = x_curr[:, self.item_dim:]    # batch_size x label_dim
+        self.W_reinst[batch_idx, winners, :] = curr_context                  # batch_size x one_hot_input_size
+        if self.debug_mode and self.item_in_mhn:
+            self.W_items.data[batch_idx, winners, :] = curr_context     # batch_size x one_hot_input_size
+
 
     # loading 1-winner MHN buffer weights over each timestep in the context window
     def __context_forward_step(self, x_curr, curr_context):
         # x_curr has shape batch_size x (input_size + output_size) (taken at current timestep in sequence, before query)
-
-        hidden_logits = torch.bmm(self.W_hi.data, x_curr[:, :self.item_dim].unsqueeze(-1))  # batch_size x hidden_size x 1
-        if self.debug_mode:
-            hidden_logits = hidden_logits + torch.bmm(self.W_items.data, curr_context.unsqueeze(-1))
-
+        if self.debug_mode and self.item_in_mhn:
+            hidden_logits = torch.bmm(self.W_items.data, curr_context.unsqueeze(-1))
+        elif self.debug_mode and not self.item_in_mhn:
+            hidden_logits = torch.bmm(self.W_hi.data, x_curr[:, :self.item_dim].unsqueeze(-1)) + torch.bmm(self.W_items.data, curr_context.unsqueeze(-1))  # batch_size x hidden_size x 1
+        else:
+            hidden_logits = torch.bmm(self.W_hi.data, x_curr[:, :self.item_dim].unsqueeze(-1))  # batch_size x hidden_size x 1
+    
         z = sparsify_tensor(hidden_logits, 1, dim=1)   # use 1-winner-take-all; shape is batch_size x hidden_size x 1
 
-        self.W_reinst = self.W_reinst + (torch.bmm(z, curr_context.unsqueeze(-2)) - self.W_reinst * z)
+        # winners = z.squeeze(-1).argmax(dim=1)
+        # batch_idx = torch.arange(z.shape[0], device=z.device)
+        # self.W_reinst[batch_idx, winners, :] = curr_context     # batch_size x one_hot_input_size
 
-        self.__adjust_weights(x_curr, z.squeeze(-1))
+        # self.W_reinst = self.W_reinst + (torch.bmm(z, curr_context.unsqueeze(-2)) - self.W_reinst * z)
+
+        self.__adjust_weights(z.squeeze(-1), x_curr, curr_context)
 
     # forward pass for query item
     def __query_forward_step(self, x_q):
@@ -164,7 +186,7 @@ class OneWinnerMHN(nn.Module):
 class OneWinnerMHNLayer(nn.Module):
 
     def __init__(self, batch_size, input_dim, k_dim, v_dim, tf_dim, output_dim=None,
-                 softmax_beta=1.0, project_out=False, debug_mode=False,
+                 softmax_beta=1.0, project_out=False, debug_mode=False, item_in_mhn=False,
                  init_coeff=1.0, input_proj_strength=1.0, device=torch.device('cpu')):
         '''
         args
@@ -204,6 +226,7 @@ class OneWinnerMHNLayer(nn.Module):
         self.batch_size = batch_size
 
         self.debug_mode = debug_mode
+        self.item_in_mhn = item_in_mhn
 
         self.beta = softmax_beta
 
@@ -254,7 +277,7 @@ class OneWinnerMHNLayer(nn.Module):
 
         # initialize new 1-winner MHN for loading up this batch of context items
         buffer_mhn = OneWinnerMHN(self.batch_size, self.item_dim + self.label_dim, self.tf_dim, self.v_dim, one_hot_input_size=self.input_dim,
-                                  input_sparsity=None, softmax_beta=self.beta, debug_mode=self.debug_mode, input_proj_strength=self.input_proj_strength)
+                                  input_sparsity=None, softmax_beta=self.beta, debug_mode=self.debug_mode, input_proj_strength=self.input_proj_strength, item_in_mhn=self.item_in_mhn)
 
         self.one_win_mhn = buffer_mhn.to(self.device)
         self.one_win_mhn.W_reinst = self.one_win_mhn.W_reinst.to(self.device)
