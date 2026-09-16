@@ -42,6 +42,8 @@ class OneWinnerMHN(nn.Module):
                     enabling a new MHN hidden neuron to be recruited for each context item
         input_proj_strength: strength of identity projection from input to MHN hidden layer, if debug_mode is True
         '''
+        num_letters = int(one_hot_input_size / 3.)
+        num_context_tokens = 2 * num_letters
 
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -53,6 +55,7 @@ class OneWinnerMHN(nn.Module):
         self.item_dim = input_size - output_size
         self.label_dim = output_size
 
+        assert not item_in_mhn or debug_mode
         self.debug_mode = debug_mode
         self.item_in_mhn = item_in_mhn
         W_hi = torch.zeros(batch_size, hidden_size, self.item_dim)
@@ -65,7 +68,6 @@ class OneWinnerMHN(nn.Module):
                 self.W_items = self.W_items.uniform_()
             else:
                 self.W_items = torch.zeros(hidden_size, self.one_hot_input_size)
-                num_context_tokens = 2 * int(self.one_hot_input_size / 3.)
                 assert hidden_size >= num_context_tokens, "hidden_size must be >= number of context tokens in this case"
                 self.W_items[:num_context_tokens, :num_context_tokens] = input_proj_strength * torch.eye(num_context_tokens)
                 self.W_items = self.W_items.unsqueeze(0).repeat(batch_size, 1, 1)
@@ -158,6 +160,7 @@ class OneWinnerMHN(nn.Module):
         x_q            : embedded representation for query item (batch_size x input_size)
         context_input  : one-hot vector representations of items in context (batch_size x (seq_len - 1) x one_hot_input_size)
         '''
+        assert self.hidden_size >= x_c.shape[1], "MHN hidden_size must be >= number of items in context window"
 
         seq_len = x_c.shape[1] + 1
         for i in range(seq_len-1):
@@ -210,6 +213,8 @@ class OneWinnerMHNLayer(nn.Module):
         debug_mode : bool,
             whether to enable "debug mode" in the MHN, where W_items is set to directly project 
             input one-hot vectors to MHN hidden layer
+        item_in_mhn : bool,
+            whether to include the input item in the MHN
         init_coeff : float,
             the initialization coefficient for the MHN weights
         input_proj_strength : float,
@@ -225,6 +230,7 @@ class OneWinnerMHNLayer(nn.Module):
         self.tf_dim = tf_dim
         self.batch_size = batch_size
 
+        assert not item_in_mhn or debug_mode
         self.debug_mode = debug_mode
         self.item_in_mhn = item_in_mhn
 
@@ -589,7 +595,7 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
                                   debug_mode, criterion, num_batches, batch_size, lr,
                                   K_lr=None, K_grad_type='version_1', final_window=1_000,
                                   device=torch.device('cpu'), manual_grad_calc=True, save_dir='',
-                                  WV_train_mode='via_reinstatement'):
+                                  WV_train_mode='via_reinstatement', item_in_mhn=False):
     
     '''
     Runs a sweep over multiple trials of an MHN-based Transformer model on the case sequence task.
@@ -668,7 +674,7 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
             assert tf_dim is not None
             assert K_grad_type == 'none'
             mhn_tf = OneWinnerMHNLayer(batch_size, input_dim, k_dim, output_dim, tf_dim,
-                                       debug_mode=debug_mode, device=device).to(device)
+                                       debug_mode=debug_mode, item_in_mhn=item_in_mhn, device=device).to(device)
 
             batch_losses, batch_accs, wv, ul_cov, qk_cov = train_mhn_tf_model_batchmode_fixedK(mhn_tf, full_seq_len, dataset_params, criterion=criterion,
                                                                                                num_batches=num_batches, batch_size=batch_size, lr=lr,
@@ -679,7 +685,7 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
             assert tf_dim is not None
             assert K_grad_type in ['version_1', 'supervised']
             mhn_tf = OneWinnerMHNLayer(batch_size, input_dim, k_dim, output_dim, tf_dim,
-                                       debug_mode=debug_mode, device=device).to(device)
+                                       debug_mode=debug_mode, item_in_mhn=item_in_mhn, device=device).to(device)
 
             # here, batch_losses refers to Q_losses
             batch_losses, _, _, batch_accs, wv, ul_cov, qk_cov = train_mhn_tf_model_batchmode(mhn_tf, full_seq_len, dataset_params, criterion=criterion, num_batches=num_batches,
@@ -722,12 +728,12 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
     print(f'\nCovariance Matrices Stats: {covar_stats_dict}')
     print(f'\nMean Covariance Matrices Stats: {mean_covar_stats_dict}')
 
-    np.save(f'{save_dir}refined_results_{model_type}_ntrials{ntrials}_L{num_letters}_C{full_seq_len-1}_kdim{k_dim}_tfdim{tf_dim}_debugmode{debug_mode}_Kgrad_{K_grad_type}', results_dict)
-    np.save(f'{save_dir}refined_covarstats_{model_type}_ntrials{ntrials}_L{num_letters}_C{full_seq_len-1}_kdim{k_dim}_tfdim{tf_dim}_debugmode{debug_mode}_Kgrad_{K_grad_type}', covar_stats_dict)
-    np.save(f'{save_dir}refined_mean_covarstats_{model_type}_ntrials{ntrials}_L{num_letters}_C{full_seq_len-1}_kdim{k_dim}_tfdim{tf_dim}_debugmode{debug_mode}_Kgrad_{K_grad_type}', mean_covar_stats_dict)
+    np.save(f'{save_dir}refined_results_{model_type}_ntrials{ntrials}_L{num_letters}_C{full_seq_len-1}_kdim{k_dim}_tfdim{tf_dim}_debugmode{debug_mode}_Kgrad_{K_grad_type}_iteminmhn_{item_in_mhn}', results_dict)
+    np.save(f'{save_dir}refined_covarstats_{model_type}_ntrials{ntrials}_L{num_letters}_C{full_seq_len-1}_kdim{k_dim}_tfdim{tf_dim}_debugmode{debug_mode}_Kgrad_{K_grad_type}_iteminmhn_{item_in_mhn}', covar_stats_dict)
+    np.save(f'{save_dir}refined_mean_covarstats_{model_type}_ntrials{ntrials}_L{num_letters}_C{full_seq_len-1}_kdim{k_dim}_tfdim{tf_dim}_debugmode{debug_mode}_Kgrad_{K_grad_type}_iteminmhn_{item_in_mhn}', mean_covar_stats_dict)
 
-    np.save(f'{save_dir}all_accs_{model_type}_ntrials{ntrials}_L{num_letters}_C{full_seq_len-1}_kdim{k_dim}_tfdim{tf_dim}_debugmode{debug_mode}_Kgrad_{K_grad_type}', all_accs)
-    np.save(f'{save_dir}all_losses_{model_type}_ntrials{ntrials}_L{num_letters}_C{full_seq_len-1}_kdim{k_dim}_tfdim{tf_dim}_debugmode{debug_mode}_Kgrad_{K_grad_type}', all_losses)
+    np.save(f'{save_dir}all_accs_{model_type}_ntrials{ntrials}_L{num_letters}_C{full_seq_len-1}_kdim{k_dim}_tfdim{tf_dim}_debugmode{debug_mode}_Kgrad_{K_grad_type}_iteminmhn_{item_in_mhn}', all_accs)
+    np.save(f'{save_dir}all_losses_{model_type}_ntrials{ntrials}_L{num_letters}_C{full_seq_len-1}_kdim{k_dim}_tfdim{tf_dim}_debugmode{debug_mode}_Kgrad_{K_grad_type}_iteminmhn_{item_in_mhn}', all_losses)
 
     print(f'\nMedian Accuracy: {np.median(all_accs, 0)}')
     print(f'\nMedian Loss: {np.median(all_losses, 0)}')
