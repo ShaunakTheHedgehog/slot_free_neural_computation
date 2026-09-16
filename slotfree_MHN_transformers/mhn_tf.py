@@ -321,7 +321,7 @@ class OneWinnerMHNLayer(nn.Module):
 def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
                                  num_batches=2_000, batch_size=64, lr=1e-3, toy_task_mode=False,
                                  reduced=False, freeze_K=False, freeze_Q=False, freeze_V=False,
-                                 manual_grad_calc=False, visualize_QKV_during=False, K_lr=None, K_grad_type='version_1',
+                                 manual_grad_calc=False, visualize_QKV_during=False, K_lr=None, K_grad_type='through_MHN',
                                  plot_mode=True, permutation_reduced=False, plot_every=100, full_key_covar=True,
                                  WV_train_mode='via_reinstatement', device=torch.device('cpu')):
     
@@ -337,7 +337,7 @@ def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
     num_batches : int : number of training batches
     batch_size : int : number of sequences per batch
     lr : float : learning rate for gradient descent
-    K_grad_type : str : type of W_K gradient to use ('version_1' (through MHN), 'supervised', or 'Hebbian')
+    K_grad_type : str : type of W_K gradient to use ('through_MHN' (through MHN), 'supervised', or 'Hebbian')
     WV_train_mode : str : whether to train W_V 'via_reinstatement' or 'via_MHN_output'
 
     Returns:
@@ -364,7 +364,7 @@ def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
     Q_losses = []
     accs = []
 
-    assert K_grad_type == 'version_1' or K_grad_type=='supervised' or K_grad_type=='Hebbian'
+    assert K_grad_type == 'through_MHN' or K_grad_type=='supervised' or K_grad_type=='Hebbian'
 
     for i in range(num_batches):
         # first, generate a batch of training sequences
@@ -441,7 +441,7 @@ def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
             if manual_grad_calc:
                 manual_K_grad = None
 
-                if K_grad_type == 'version_1':
+                if K_grad_type == 'through_MHN':
                     manual_K_grad = calculate_mhn_tf_K_grad(batch_size, reinst_out_K, targets, model.W_K.weight.data,
                                                     model.one_win_mhn.W_hi.data, model.one_win_mhn.W_oh.data, reinst_context, device=device)
                 elif K_grad_type == 'supervised':
@@ -593,7 +593,7 @@ def train_mhn_tf_model_batchmode_fixedK(model, full_seq_len, dataset_params, cri
 # run a sweep over multiple trials ('ntrials') of MHN-based Transformer model on case sequence task
 def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len, k_dim, tf_dim,
                                   debug_mode, criterion, num_batches, batch_size, lr,
-                                  K_lr=None, K_grad_type='version_1', final_window=1_000,
+                                  K_lr=None, K_grad_type='through_MHN', final_window=1_000,
                                   device=torch.device('cpu'), manual_grad_calc=True, save_dir='',
                                   WV_train_mode='via_reinstatement', item_in_mhn=False):
     
@@ -612,7 +612,7 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
     num_batches : int : number of training batches
     batch_size : int : number of context sequences per batch
     lr : float : learning rate for gradient descent 
-    K_grad_type : str : type of W_K gradient to use ('version_1' (through MHN), 'supervised', or 'none')
+    K_grad_type : str : type of W_K gradient to use ('through_MHN' (through MHN), 'supervised', or 'none')
     WV_train_mode : str : whether to train W_V 'via_reinstatement' or 'via_MHN_output'
 
     Returns:
@@ -624,7 +624,7 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
     '''
 
     assert model_type in ['tf', 'mhn_tf_fixed_WK', 'mhn_tf_V1']
-    assert K_grad_type in ['version_1', 'supervised', 'none']
+    assert K_grad_type in ['through_MHN', 'supervised', 'none']
     assert WV_train_mode in ['via_reinstatement', 'via_MHN_output']
 
     if save_dir != '':
@@ -683,7 +683,7 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
         else:
             assert model_type == 'mhn_tf_V1'
             assert tf_dim is not None
-            assert K_grad_type in ['version_1', 'supervised']
+            assert K_grad_type in ['through_MHN', 'supervised']
             mhn_tf = OneWinnerMHNLayer(batch_size, input_dim, k_dim, output_dim, tf_dim,
                                        debug_mode=debug_mode, item_in_mhn=item_in_mhn, device=device).to(device)
 
