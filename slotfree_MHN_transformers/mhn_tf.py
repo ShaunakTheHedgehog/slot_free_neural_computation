@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import pdb
+import pickle as pkl
 
 import functools
 import random
@@ -595,14 +596,14 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
                                   debug_mode, criterion, num_batches, batch_size, lr,
                                   K_lr=None, K_grad_type='through_MHN', final_window=1_000,
                                   device=torch.device('cpu'), manual_grad_calc=True, save_dir='',
-                                  WV_train_mode='via_reinstatement', item_in_mhn=False):
+                                  WV_train_mode='via_reinstatement', item_in_mhn=False, input_proj_strength=1.0):
     
     '''
     Runs a sweep over multiple trials of an MHN-based Transformer model on the case sequence task.
 
     Key Arguments:
     ntrials : int : number of trials to run
-    model_type : str : type of model to run ('tf', 'mhn_tf_fixed_WK', or 'mhn_tf_V1')
+    model_type : str : type of model to run ('tf', 'mhn_tf_fixed_WK', or 'mhn_tf')
     num_letters : int : number of letters in the case sequence task
     full_seq_len : int : full sequence length (including query token)
     k_dim : int : input dimension to the MHN
@@ -623,7 +624,7 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
     mean_covar_stats_dict : dict : dictionary containing multi-trial-averaged mean covariance statistics
     '''
 
-    assert model_type in ['tf', 'mhn_tf_fixed_WK', 'mhn_tf_V1']
+    assert model_type in ['tf', 'mhn_tf_fixed_WK', 'mhn_tf']
     assert K_grad_type in ['through_MHN', 'supervised', 'none']
     assert WV_train_mode in ['via_reinstatement', 'via_MHN_output']
 
@@ -673,7 +674,7 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
         elif model_type == 'mhn_tf_fixed_WK':
             assert tf_dim is not None
             assert K_grad_type == 'none'
-            mhn_tf = OneWinnerMHNLayer(batch_size, input_dim, k_dim, output_dim, tf_dim,
+            mhn_tf = OneWinnerMHNLayer(batch_size, input_dim, k_dim, output_dim, tf_dim, input_proj_strength=input_proj_strength,
                                        debug_mode=debug_mode, item_in_mhn=item_in_mhn, device=device).to(device)
 
             batch_losses, batch_accs, wv, ul_cov, qk_cov = train_mhn_tf_model_batchmode_fixedK(mhn_tf, full_seq_len, dataset_params, criterion=criterion,
@@ -681,10 +682,10 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
                                                                                                manual_grad_calc=manual_grad_calc, plot_mode=False, device=device,
                                                                                                WV_train_mode=WV_train_mode)
         else:
-            assert model_type == 'mhn_tf_V1'
+            assert model_type == 'mhn_tf'
             assert tf_dim is not None
             assert K_grad_type in ['through_MHN', 'supervised']
-            mhn_tf = OneWinnerMHNLayer(batch_size, input_dim, k_dim, output_dim, tf_dim,
+            mhn_tf = OneWinnerMHNLayer(batch_size, input_dim, k_dim, output_dim, tf_dim, input_proj_strength=input_proj_strength,
                                        debug_mode=debug_mode, item_in_mhn=item_in_mhn, device=device).to(device)
 
             # here, batch_losses refers to Q_losses
@@ -712,9 +713,9 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
     mean_QK_u_covar_diffs = QK_u_diags_mean - QK_u_offdiags_mean
 
     # store results in dictionary and save to files
-    mean_covar_stats_dict = {'ul_diags_mean': ul_diags_mean.mean(), 'ul_diags_range': ul_diags_range.mean(), 'ul_offdiags_mean': ul_offdiags_mean.mean(), 'ul_offdiags_range': ul_offdiags_range.mean(),
-                            'QK_l_diags_mean': QK_l_diags_mean.mean(), 'QK_l_diags_range': QK_l_diags_range.mean(), 'QK_l_offdiags_mean': QK_l_offdiags_mean.mean(), 'QK_l_offdiags_range': QK_l_offdiags_range.mean(),
-                            'QK_u_diags_mean': QK_u_diags_mean.mean(), 'QK_u_diags_range': QK_u_diags_range.mean(), 'QK_u_offdiags_mean': QK_u_offdiags_mean.mean(), 'QK_u_offdiags_range': QK_u_offdiags_range.mean()}
+    mean_covar_stats_dict = {'ul_diags_mean_mean': ul_diags_mean.mean(), 'ul_diags_mean_range': ul_diags_range.mean(), 'ul_offdiags_mean_mean': ul_offdiags_mean.mean(), 'ul_offdiags_mean_range': ul_offdiags_range.mean(),
+                            'QK_l_diags_mean_mean': QK_l_diags_mean.mean(), 'QK_l_diags_mean_range': QK_l_diags_range.mean(), 'QK_l_offdiags_mean_mean': QK_l_offdiags_mean.mean(), 'QK_l_offdiags_mean_range': QK_l_offdiags_range.mean(),
+                            'QK_u_diags_mean_mean': QK_u_diags_mean.mean(), 'QK_u_diags_mean_range': QK_u_diags_range.mean(), 'QK_u_offdiags_mean_mean': QK_u_offdiags_mean.mean(), 'QK_u_offdiags_mean_range': QK_u_offdiags_range.mean()}
 
     covar_stats_dict = {'ul_diags_mean': ul_diags_mean, 'ul_diags_range': ul_diags_range, 'ul_offdiags_mean': ul_offdiags_mean, 'ul_offdiags_range': ul_offdiags_range,
                         'QK_l_diags_mean': QK_l_diags_mean, 'QK_l_diags_range': QK_l_diags_range, 'QK_l_offdiags_mean': QK_l_offdiags_mean, 'QK_l_offdiags_range': QK_l_offdiags_range,
@@ -724,18 +725,18 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
                    'mean_W_V_diffs': mean_W_V_diffs, 'mean_ul_covar_diffs': mean_ul_covar_diffs,
                    'mean_QK_l_covar_diffs': mean_QK_l_covar_diffs, 'mean_QK_u_covar_diffs': mean_QK_u_covar_diffs}
 
+    # concatenate all three dictionaries into one for saving
+    full_results_dict = {**results_dict, **covar_stats_dict, **mean_covar_stats_dict, 'losses': all_losses, 'accs': all_accs}
+
+    # save as pkl file to directory
+    with open(f'{save_dir}full_results_{model_type}_ntrials{ntrials}_L{num_letters}_C{full_seq_len-1}_kdim{k_dim}_tfdim{tf_dim}_debugmode{debug_mode}_Kgrad_{K_grad_type}_iteminmhn_{item_in_mhn}.pkl', 'wb') as f:
+        pkl.dump(full_results_dict, f)
+
     print(f'Results Dictionary: {results_dict}')
     print(f'\nCovariance Matrices Stats: {covar_stats_dict}')
     print(f'\nMean Covariance Matrices Stats: {mean_covar_stats_dict}')
 
-    np.save(f'{save_dir}refined_results_{model_type}_ntrials{ntrials}_L{num_letters}_C{full_seq_len-1}_kdim{k_dim}_tfdim{tf_dim}_debugmode{debug_mode}_Kgrad_{K_grad_type}_iteminmhn_{item_in_mhn}', results_dict)
-    np.save(f'{save_dir}refined_covarstats_{model_type}_ntrials{ntrials}_L{num_letters}_C{full_seq_len-1}_kdim{k_dim}_tfdim{tf_dim}_debugmode{debug_mode}_Kgrad_{K_grad_type}_iteminmhn_{item_in_mhn}', covar_stats_dict)
-    np.save(f'{save_dir}refined_mean_covarstats_{model_type}_ntrials{ntrials}_L{num_letters}_C{full_seq_len-1}_kdim{k_dim}_tfdim{tf_dim}_debugmode{debug_mode}_Kgrad_{K_grad_type}_iteminmhn_{item_in_mhn}', mean_covar_stats_dict)
-
-    np.save(f'{save_dir}all_accs_{model_type}_ntrials{ntrials}_L{num_letters}_C{full_seq_len-1}_kdim{k_dim}_tfdim{tf_dim}_debugmode{debug_mode}_Kgrad_{K_grad_type}_iteminmhn_{item_in_mhn}', all_accs)
-    np.save(f'{save_dir}all_losses_{model_type}_ntrials{ntrials}_L{num_letters}_C{full_seq_len-1}_kdim{k_dim}_tfdim{tf_dim}_debugmode{debug_mode}_Kgrad_{K_grad_type}_iteminmhn_{item_in_mhn}', all_losses)
-
     print(f'\nMedian Accuracy: {np.median(all_accs, 0)}')
     print(f'\nMedian Loss: {np.median(all_losses, 0)}')
 
-    return results_dict, all_accs, all_losses, covar_stats_dict, mean_covar_stats_dict
+    return full_results_dict

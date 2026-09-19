@@ -265,7 +265,11 @@ def visualize_uppercase_lowercase_covariance(num_letters, W_K, label='', downloa
     if plot_mode and full:
         plt.figure(figsize=(10, 10))
         plt.title('Key Covariance', fontsize=20)
-        plt.imshow(covar, cmap='viridis', vmin=KK_lims[0], vmax=KK_lims[1])
+        vmin, vmax = covar.min(), covar.max()
+        if KK_lims is not None:
+            vmin = KK_lims[0]
+            vmax = KK_lims[1]
+        plt.imshow(covar, cmap='viridis', vmin=vmin, vmax=vmax)
         x_labels = get_x_labels(W_K.shape[1], version='both_cases')
         y_labels = get_x_labels(W_K.shape[1], version='both_cases')
 
