@@ -339,141 +339,141 @@ def get_upper_lower_covar_stats(num_letters, ul_covar):
 # Manual gradient calculation routines for Transformer
 #---------------------------------------------------------------------
 
-# calculate gradients for W_Q matrix in a minimal Transformer model
-def calculate_Q_grad(batch_size, y_hat, y, W_Q, W_K, W_V, X):
-    '''
-    Computes gradient for W_Q for a batch of data in minimal Transformer model
+# # calculate gradients for W_Q matrix in a minimal Transformer model
+# def calculate_Q_grad(batch_size, y_hat, y, W_Q, W_K, W_V, X):
+#     '''
+#     Computes gradient for W_Q for a batch of data in minimal Transformer model
 
-    batch_size   : size of a gradient batch
-    y_hat        : output of Transformer model (batch_size x v_dim)
-    y            : ground truth output (batch_size x v_dim)
-    W_Q          : query matrix (k_dim x input_dim)
-    W_K          : key matrix (k_dim x input_dim)
-    W_V          : value matrix (v_dim x input_dim)
-    X            : inputs (batch_size x seq_len x input_dim)
-    '''
+#     batch_size   : size of a gradient batch
+#     y_hat        : output of Transformer model (batch_size x v_dim)
+#     y            : ground truth output (batch_size x v_dim)
+#     W_Q          : query matrix (k_dim x input_dim)
+#     W_K          : key matrix (k_dim x input_dim)
+#     W_V          : value matrix (v_dim x input_dim)
+#     X            : inputs (batch_size x seq_len x input_dim)
+#     '''
 
-    context_len = X.shape[1] - 1
-    Q_grad = torch.zeros(W_Q.shape[0], X.shape[-1])
+#     context_len = X.shape[1] - 1
+#     Q_grad = torch.zeros(W_Q.shape[0], X.shape[-1])
 
-    # add up gradients from each context sequence in the batch
-    for i in range(batch_size):
-        X_c = X[i, :-1, :]
-        x_q = X[i, -1, :]
+#     # add up gradients from each context sequence in the batch
+#     for i in range(batch_size):
+#         X_c = X[i, :-1, :]
+#         x_q = X[i, -1, :]
 
-        e = y_hat[i] - y[i]
-        V = W_V @ X_c.T         # v_dim x (seq_len - 1)
-        K = W_K @ X_c.T         # k_dim x (seq_len - 1)
-        q = W_Q @ x_q
+#         e = y_hat[i] - y[i]
+#         V = W_V @ X_c.T         # v_dim x (seq_len - 1)
+#         K = W_K @ X_c.T         # k_dim x (seq_len - 1)
+#         q = W_Q @ x_q
 
-        w = K.T @ q
-        sm = F.softmax(w)
-        J_sm = torch.diag(sm) - torch.outer(sm, sm)
+#         w = K.T @ q
+#         sm = F.softmax(w)
+#         J_sm = torch.diag(sm) - torch.outer(sm, sm)
 
-        first_term = e.reshape(1,-1) @ V @ J_sm
-        first_term = first_term.reshape(-1)             # context_len
+#         first_term = e.reshape(1,-1) @ V @ J_sm
+#         first_term = first_term.reshape(-1)             # context_len
 
-        K_tensor = K.T.unsqueeze(-1)                                            # context_len x k_dim x 1
-        x_q_tensor = x_q.unsqueeze(0).repeat(context_len, 1).unsqeeze(1)        # context_len x 1 x input_dim
-        big_tensor = torch.bmm(K_tensor, x_q_tensor)                            # context_len x k_dim x input_dim
+#         K_tensor = K.T.unsqueeze(-1)                                            # context_len x k_dim x 1
+#         x_q_tensor = x_q.unsqueeze(0).repeat(context_len, 1).unsqeeze(1)        # context_len x 1 x input_dim
+#         big_tensor = torch.bmm(K_tensor, x_q_tensor)                            # context_len x k_dim x input_dim
 
-        grad = torch.einsum('i,ijk->jk', first_term, big_tensor)
-        Q_grad += grad
+#         grad = torch.einsum('i,ijk->jk', first_term, big_tensor)
+#         Q_grad += grad
 
-    Q_grad *= (2./ batch_size)
-    return Q_grad
-
-
-# calculate gradients for W_V matrix in a minimal Transformer model
-def calculate_V_grad(batch_size, y_hat, y, W_Q, W_K, W_V, X, x_reinst=None):
-    '''
-    Computes gradient for W_V for a batch of data in minimal Transformer model
-
-    batch_size   :     size of a gradient batch
-    y_hat        :     output of Transformer model (batch_size x v_dim)
-    y            :     ground truth output (batch_size x v_dim)
-    W_Q          :     query matrix (k_dim x input_dim)
-    W_K          :     key matrix (k_dim x input_dim)
-    W_V          :     value matrix (v_dim x input_dim)
-    X            :     inputs (batch_size x seq_len x input_dim)
-    x_reinst     :     reinstated context vectors (batch_size x input_dim)
-    '''
-    error = y_hat - y          # output error; batch_size x v_dim
-
-    # if the softmax-weigted sum of the x's is provided, use it to compute the gradient more cleanly
-    if x_reinst is not None:
-        return (2./batch_size) * error.T @ x_reinst
-
-    V_grad = torch.zeros(y.shape[0], X.shape[-1])
-
-    # add up gradients from each context sequence in the batch
-    for i in range(batch_size):
-        X_c = X[i, :-1, :]      # context_len x input_dim
-        x_q = X[i, -1, :]
-
-        V = W_V @ X_c.T         # v_dim x context_len
-        K = W_K @ X_c.T         # k_dim x context_len
-        q = W_Q @ x_q           # k_dim
-
-        w = K.T @ q             # context_len
-        sm = F.softmax(w)
-
-        x_tilde = X_c.T @ sm
-
-        V_grad += torch.outer(error[i], x_tilde)
-
-    V_grad *= (2. / batch_size)
-    return V_grad
+#     Q_grad *= (2./ batch_size)
+#     return Q_grad
 
 
-# calculate gradients for W_K matrix in a minimal Transformer model
-def calculate_K_grad(batch_size, y_hat, y, W_Q, W_K, W_V, X):
-    '''
-    Computes gradient for W_K for a batch of data in minimal Transformer model
+# # calculate gradients for W_V matrix in a minimal Transformer model
+# def calculate_V_grad(batch_size, y_hat, y, W_Q, W_K, W_V, X, x_reinst=None):
+#     '''
+#     Computes gradient for W_V for a batch of data in minimal Transformer model
 
-    batch_size   : size of a gradient batch
-    y_hat        : output of Transformer model (batch_size x v_dim)
-    y            : ground truth output (batch_size x v_dim)
-    W_Q          : query matrix (k_dim x input_dim)
-    W_K          : key matrix (k_dim x input_dim)
-    W_V          : value matrix (v_dim x input_dim)
-    X            : inputs (batch_size x seq_len x input_dim)
-    x_reinst     : reinstated context vectors (batch_size x input_dim)
-    '''
+#     batch_size   :     size of a gradient batch
+#     y_hat        :     output of Transformer model (batch_size x v_dim)
+#     y            :     ground truth output (batch_size x v_dim)
+#     W_Q          :     query matrix (k_dim x input_dim)
+#     W_K          :     key matrix (k_dim x input_dim)
+#     W_V          :     value matrix (v_dim x input_dim)
+#     X            :     inputs (batch_size x seq_len x input_dim)
+#     x_reinst     :     reinstated context vectors (batch_size x input_dim)
+#     '''
+#     error = y_hat - y          # output error; batch_size x v_dim
 
-    context_len = X.shape[1] - 1
-    K_grad = torch.zeros(W_Q.shape[0], X.shape[-1])
+#     # if the softmax-weigted sum of the x's is provided, use it to compute the gradient more cleanly
+#     if x_reinst is not None:
+#         return (2./batch_size) * error.T @ x_reinst
 
-    # add up gradients from each context sequence in the batch
-    for i in range(batch_size):
-        X_c = X[i, :-1, :]      # context_len x input_dim
-        x_q = X[i, -1, :]
+#     V_grad = torch.zeros(y.shape[0], X.shape[-1])
 
-        e = y_hat[i] - y[i]
-        V = W_V @ X_c.T         # v_dim x context_len
-        K = W_K @ X_c.T         # k_dim x context_len
-        q = W_Q @ x_q           # k_dim
+#     # add up gradients from each context sequence in the batch
+#     for i in range(batch_size):
+#         X_c = X[i, :-1, :]      # context_len x input_dim
+#         x_q = X[i, -1, :]
 
-        w = K.T @ q
-        sm = F.softmax(w)
-        # compute softmax Jacobian
-        J_sm = torch.diag(sm) - torch.outer(sm, sm)
+#         V = W_V @ X_c.T         # v_dim x context_len
+#         K = W_K @ X_c.T         # k_dim x context_len
+#         q = W_Q @ x_q           # k_dim
 
-        first_term = e.reshape(1,-1) @ V @ J_sm
-        first_term = first_term.reshape(-1)             # context_len
+#         w = K.T @ q             # context_len
+#         sm = F.softmax(w)
 
-        q_tensor = q.unsqueeze(0).repeat(context_len, 1).unsqueeze(-1)       # context_len x k_dim x 1
-        big_tensor = torch.bmm(q_tensor, X_c.unsqueeze(1))                   # context_len x k_dim x input_dim
+#         x_tilde = X_c.T @ sm
 
-        grad = torch.einsum('i,ijk->jk', first_term, big_tensor)
-        K_grad += grad
+#         V_grad += torch.outer(error[i], x_tilde)
 
-    K_grad *= (2./ batch_size)
+#     V_grad *= (2. / batch_size)
+#     return V_grad
+
+
+# # calculate gradients for W_K matrix in a minimal Transformer model
+# def calculate_K_grad(batch_size, y_hat, y, W_Q, W_K, W_V, X):
+#     '''
+#     Computes gradient for W_K for a batch of data in minimal Transformer model
+
+#     batch_size   : size of a gradient batch
+#     y_hat        : output of Transformer model (batch_size x v_dim)
+#     y            : ground truth output (batch_size x v_dim)
+#     W_Q          : query matrix (k_dim x input_dim)
+#     W_K          : key matrix (k_dim x input_dim)
+#     W_V          : value matrix (v_dim x input_dim)
+#     X            : inputs (batch_size x seq_len x input_dim)
+#     x_reinst     : reinstated context vectors (batch_size x input_dim)
+#     '''
+
+#     context_len = X.shape[1] - 1
+#     K_grad = torch.zeros(W_Q.shape[0], X.shape[-1])
+
+#     # add up gradients from each context sequence in the batch
+#     for i in range(batch_size):
+#         X_c = X[i, :-1, :]      # context_len x input_dim
+#         x_q = X[i, -1, :]
+
+#         e = y_hat[i] - y[i]
+#         V = W_V @ X_c.T         # v_dim x context_len
+#         K = W_K @ X_c.T         # k_dim x context_len
+#         q = W_Q @ x_q           # k_dim
+
+#         w = K.T @ q
+#         sm = F.softmax(w)
+#         # compute softmax Jacobian
+#         J_sm = torch.diag(sm) - torch.outer(sm, sm)
+
+#         first_term = e.reshape(1,-1) @ V @ J_sm
+#         first_term = first_term.reshape(-1)             # context_len
+
+#         q_tensor = q.unsqueeze(0).repeat(context_len, 1).unsqueeze(-1)       # context_len x k_dim x 1
+#         big_tensor = torch.bmm(q_tensor, X_c.unsqueeze(1))                   # context_len x k_dim x input_dim
+
+#         grad = torch.einsum('i,ijk->jk', first_term, big_tensor)
+#         K_grad += grad
+
+#     K_grad *= (2./ batch_size)
 
 
 # compute gradients for W_Q, W_K, W_V matrices in a minimal Transformer model
 def calculate_QKV_grads(batch_size, y_hat, y, W_Q, W_K, W_V, X, 
-                        normalization=1.0, device=torch.device('cpu')):
+                        normalization=1.0, beta=1.0, device=torch.device('cpu')):
     '''
     Computes gradients for W_Q, W_K, W_V for a batch of data in minimal Transformer model
 
@@ -505,7 +505,7 @@ def calculate_QKV_grads(batch_size, y_hat, y, W_Q, W_K, W_V, X,
         K = W_K @ X_c.T         # k_dim x context_len
         q = W_Q @ x_q           # k_dim
 
-        w = K.T @ q
+        w = beta * K.T @ q
         sm = F.softmax(w, dim=0)
         # compute softmax Jacobian
         J_sm = torch.diag(sm) - torch.outer(sm, sm)
@@ -518,7 +518,7 @@ def calculate_QKV_grads(batch_size, y_hat, y, W_Q, W_K, W_V, X,
         big_tensor_for_K = torch.bmm(q_tensor, X_c.unsqueeze(1))             # context_len x k_dim x input_dim
 
         little_K_grad = torch.einsum('i,ijk->jk', first_term, big_tensor_for_K)
-        K_grad += little_K_grad
+        K_grad += beta * little_K_grad
 
         # calculate W_Q gradient
         K_tensor = K.T.unsqueeze(-1)                                            # context_len x k_dim x 1
@@ -526,7 +526,7 @@ def calculate_QKV_grads(batch_size, y_hat, y, W_Q, W_K, W_V, X,
         big_tensor_for_Q = torch.bmm(K_tensor, x_q_tensor)                      # context_len x k_dim x input_dim
 
         little_Q_grad = torch.einsum('i,ijk->jk', first_term, big_tensor_for_Q)
-        Q_grad += little_Q_grad
+        Q_grad += beta * little_Q_grad
 
         # calculate W_V gradient
         x_tilde = X_c.T @ sm
@@ -547,7 +547,7 @@ def calculate_QKV_grads(batch_size, y_hat, y, W_Q, W_K, W_V, X,
 
 # calculate gradients for W_Q and W_V matrices in a MHN-Transformer model
 def calculate_mhn_tf_QV_grads(batch_size, y_hat, y, W_Q, W_MHN_tensor, W_reinst_tensor, W_V, X, x_reinst,
-                              device=torch.device('cpu'), WV_train_mode='via_reinstatement', MHN_out=None):
+                              device=torch.device('cpu'), WV_train_mode='via_reinstatement', MHN_out=None, beta=1.0):
     '''
     Computes gradients for W_Q, W_V for a batch of data in the MHN-Transformer model
 
@@ -590,7 +590,7 @@ def calculate_mhn_tf_QV_grads(batch_size, y_hat, y, W_Q, W_MHN_tensor, W_reinst_
         q = W_Q @ x_q                   # k_dim
 
         w = W_MHN @ q
-        sm = F.softmax(w, dim=0)
+        sm = F.softmax(beta * w, dim=0)
         # compute softmax Jacobian
         J_sm = torch.diag(sm) - torch.outer(sm, sm)
 
@@ -603,7 +603,7 @@ def calculate_mhn_tf_QV_grads(batch_size, y_hat, y, W_Q, W_MHN_tensor, W_reinst_
         big_tensor_for_Q = torch.bmm(K_tensor, x_q_tensor)                  # tf_dim x k_dim x input_dim
 
         little_Q_grad = torch.einsum('i,ijk->jk', first_term_Q, big_tensor_for_Q)
-        Q_grad += (2 * little_Q_grad)
+        Q_grad += (2 * beta * little_Q_grad)
 
     return Q_grad, V_grad
 
@@ -638,7 +638,7 @@ def simple_K_update(W_K, x_reinst, W_Q, x_q,
 
 # calculate backwards gradients for the W_K matrix in a MHN-Transformer model through the MHN module
 def calculate_mhn_tf_K_grad(batch_size, y_K_hat, y, W_K, W_MHN_tensor, W_out_tensor, x_reinst,
-                            device=torch.device('cpu')):
+                            device=torch.device('cpu'), beta=1.0):
     
     '''
     Computes gradient for W_K (through the MHN module) for a batch of data in the MHN-Transformer model
@@ -669,7 +669,7 @@ def calculate_mhn_tf_K_grad(batch_size, y_K_hat, y, W_K, W_MHN_tensor, W_out_ten
 
         k = W_K @ x_tilde           # k_dim
         w = W_MHN @ k               # tf_dim
-        sm = F.softmax(w, dim=0)
+        sm = F.softmax(beta * w, dim=0)
         # compute softmax Jacobian
         J_sm = torch.diag(sm) - torch.outer(sm, sm)
 
@@ -681,7 +681,7 @@ def calculate_mhn_tf_K_grad(batch_size, y_K_hat, y, W_K, W_MHN_tensor, W_out_ten
         big_tensor_for_K = torch.bmm(K_tensor, x_tilde_tensor)                      # tf_dim x k_dim x input_dim
 
         little_K_grad = torch.einsum('i,ijk->jk', first_term_K, big_tensor_for_K)
-        K_grad += little_K_grad
+        K_grad += beta * little_K_grad
 
     return K_grad
 

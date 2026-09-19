@@ -51,7 +51,7 @@ class Attention(nn.Module):
     Multi-head attention mechanism.
     '''
 
-    def __init__(self, embed_dim, tf_dim, v_dim, n_heads=1, dropout=0., project_out=False, W_V_init=None):
+    def __init__(self, embed_dim, tf_dim, v_dim, n_heads=1, dropout=0., project_out=False, W_V_init=None, beta=1.0):
         '''
         args
         ----
@@ -69,6 +69,8 @@ class Attention(nn.Module):
             whether to apply a final linear projection to the output of the attention layer
         W_V_init : torch.tensor
             if provided, initializes W_V to this value (should have shape (v_dim, embed_dim))
+        beta : float
+            scaling factor for the attention weights
         '''
         super().__init__()
 
@@ -79,7 +81,8 @@ class Attention(nn.Module):
         dim_head = tf_dim // n_heads
         assert dim_head * n_heads == tf_dim, "embed_dim must be divisible by num_heads"
 
-        self.scale = (dim_head ** (-0.5))
+        # self.scale = (dim_head ** (-0.5))
+        self.beta = beta
 
         self.q_project = nn.Linear(embed_dim, tf_dim, bias=False)
         self.k_project = nn.Linear(embed_dim, tf_dim, bias=False)
@@ -87,8 +90,8 @@ class Attention(nn.Module):
 
         # initialize Q, K, V weights
         with torch.no_grad():
-            W_Q = torch.randn(tf_dim, embed_dim, requires_grad=True) * (0.25/tf_dim**0.5)
-            W_K = torch.randn(tf_dim, embed_dim, requires_grad=True) * (0.25/tf_dim**0.5)
+            W_Q = torch.randn(tf_dim, embed_dim, requires_grad=True) * (1./tf_dim**0.5)
+            W_K = torch.randn(tf_dim, embed_dim, requires_grad=True) * (1./tf_dim**0.5)
             W_V = torch.rand(v_dim, embed_dim, requires_grad=True) * 0.1
             self.q_project.weight.copy_(W_Q)
             self.k_project.weight.copy_(W_K)
@@ -150,7 +153,7 @@ class Attention(nn.Module):
         # (batch, n_items, n_heads x dim_head) -> (batch, n_heads, n_items, dim_head)
         q, k, v = map(lambda x: rearrange(x, 'b n (h d) -> b h n d', h=self.n_heads), (q,k,v))
 
-        attn = torch.matmul(q, k.transpose(-1,-2)) * self.scale # (batch, n_heads, n_target_items, n_source_items)
+        attn = torch.matmul(q, k.transpose(-1,-2)) * self.beta # (batch, n_heads, n_target_items, n_source_items)
         if attn_mask is not None:
             if attn_mask.dim()==3:
                 attn_mask = attn_mask.unsqueeze(1) # add an n_head dim for broadcast add
@@ -241,9 +244,10 @@ class SimplifiedTransformerLayer(nn.Module):
     single attention block, consisting of a self-attention layer only
     '''
 
-    def __init__(self, embed_dim, tf_dim, n_heads, output_dim, W_V_init=None):
+    def __init__(self, embed_dim, tf_dim, n_heads, output_dim, W_V_init=None, beta=1.0):
         super().__init__()
-        self.self_attn = Attention(embed_dim, tf_dim, output_dim, n_heads, W_V_init=W_V_init)
+        self.self_attn = Attention(embed_dim, tf_dim, output_dim, n_heads, W_V_init=W_V_init, beta=beta)
+        self.beta = beta
 
     def forward(self, x, attn_type='independent'):
         '''
@@ -294,7 +298,7 @@ def tf_mse_loss(model_outputs, target_labels):
 
 # train a transformer model on the case sequence task in batch mode
 def train_tf_batchmode(model, full_seq_len, dataset_params, criterion,
-                       regularizer=None, num_batches=20_000, batch_size=128, lr=1e-3,
+                       regularizer=None, num_batches=5_000, batch_size=64, lr=5e-3,
                        toy_task_mode=False, reduced=False, freeze_K=False, freeze_Q=False, freeze_V=False, manual_grad_calc=False,
                        visualize_QKV_during=False, plot_mode=True, permutation_reduced=False, W_V_fixed=False,
                        full_key_covar=True, plot_freq=100, device=torch.device('cpu')):
@@ -347,11 +351,13 @@ def train_tf_batchmode(model, full_seq_len, dataset_params, criterion,
 
         output = model(inputs)
 
+        # evaluate the loss and accuracy on this batch
+        loss = criterion(output, targets)
+        batch_loss = loss.item() / batch_size
+
         if regularizer is not None:
             loss += regularizer(model)
 
-        # evaluate the loss and accuracy on this batch
-        loss = criterion(output, targets)
         train_acc = get_val_acc(output, targets)
 
         W_Q = model.self_attn.q_project.weight.data
@@ -365,7 +371,7 @@ def train_tf_batchmode(model, full_seq_len, dataset_params, criterion,
         # update weights, manually or automatically
         if manual_grad_calc:
             Q_grad, K_grad, V_grad = calculate_QKV_grads(batch_size, output[:, -1, :], targets, W_Q, W_K, W_V, inputs,
-                                                         device=device)
+                                                         device=device, beta=model.beta)
         else:
             loss.backward()
             Q_grad, K_grad, V_grad = model.self_attn.q_project.weight.grad, model.self_attn.k_project.weight.grad, model.self_attn.v_project.weight.grad
@@ -377,15 +383,14 @@ def train_tf_batchmode(model, full_seq_len, dataset_params, criterion,
         update_tf_weights(model, Q_grad, K_grad, V_grad, lr, freeze_K=freeze_K, freeze_Q=freeze_Q, freeze_V=freeze_V)
 
         # get batch-averaged losses and add to train/val loss list
-        curr_loss = loss.item() / batch_size
-        batch_losses.append(curr_loss)
+        batch_losses.append(batch_loss)
         batch_accs.append(train_acc.item())
 
         # periodically visualize learned Q, K, V weights and covariance matrices
         if visualize_QKV_during and (i % plot_freq == 0):
-          _, _ = visualize_QKV_matrices(model, 'tf', label=f'Iteration {i}', W_V_lims=[-0.2, 1.2, 0.2], QK_lims=[-2, 5, 1])
+          _, _ = visualize_QKV_matrices(model, 'tf', label=f'Iteration {i}') #, W_V_lims=[-0.2, 1.2, 0.2], QK_lims=[-2, 5, 1])
           W_K = model.self_attn.k_project.weight.data
-          _ = visualize_uppercase_lowercase_covariance(num_letters, W_K, label='', KK_lims=[-2, 4, 1], full=full_key_covar)
+          _ = visualize_uppercase_lowercase_covariance(num_letters, W_K, label='') #, KK_lims=[-2, 4, 1], full=full_key_covar)
 
         pbar.set_description("Batch {:03} Train Loss {:.4f} Train Acc {:.4f}"\
                             .format(i+1, batch_losses[-1], batch_accs[-1]))

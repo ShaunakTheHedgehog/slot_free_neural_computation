@@ -22,7 +22,6 @@ if 'SLURM_JOB_ID' in os.environ:
 
 import argparse
 import glob
-import inspect
 import json
 import platform
 import random
@@ -66,8 +65,8 @@ def parse_args():
                    help='MHN hidden size (default: C for *_item, 2L for *_proj; required for *_noproj; unused for tf)')
     p.add_argument('--input_proj_strength', type=float, default=1.0,
                    help='strength of the identity input projection (*_proj models only)')
-    p.add_argument('--attn_scale', choices=['none', 'sqrt_N'], default='none',
-                   help='attention logit scaling: none, or 1/sqrt(k_dim)')
+    p.add_argument('--beta', type=float, default=1.0,
+                   help='inverse temperature multiplying the attention logits (all models)')
 
     # training
     p.add_argument('--lr', type=float, help='learning rate for W_Q and W_V (and W_K unless --K_lr is given)')
@@ -133,8 +132,8 @@ def run_name(args):
     parts += [f'nb{args.num_batches}', f'bs{args.batch_size}', f'nt{args.ntrials}']
     if args.model.endswith('_proj') and args.input_proj_strength != 1.0:
         parts.append(f'ips{args.input_proj_strength:g}')
-    if args.attn_scale != 'none':
-        parts.append(f'attn-{args.attn_scale}')
+    if args.beta != 1.0:
+        parts.append(f'beta{args.beta:g}')
     if args.WV_train_mode != 'via_reinstatement':
         parts.append('WV-MHNout')
     parts.append(f's{args.seed}')
@@ -156,11 +155,6 @@ def git_commit():
 def run_sweep(args):
     spec = MODELS[args.model]
     run_dir = os.path.join(args.results_root, args.experiment, args.model, run_name(args))
-
-    sweep_params = inspect.signature(run_case_sequence_model_sweep).parameters
-    if args.attn_scale != 'none' and 'attn_scale' not in sweep_params:
-        raise NotImplementedError('--attn_scale sqrt_N needs run_case_sequence_model_sweep to accept an '
-                                  '`attn_scale` argument (and the model/gradient changes behind it).')
 
     print(f'run directory: {run_dir}')
     if args.dry_run:
@@ -194,9 +188,7 @@ def run_sweep(args):
     sweep_kwargs = dict(K_lr=args.K_lr, K_grad_type=spec['K_grad_type'], final_window=args.final_window,
                         device=torch.device('cpu'), manual_grad_calc=True, save_dir=run_dir,
                         WV_train_mode=args.WV_train_mode, item_in_mhn=spec['item_in_mhn'],
-                        input_proj_strength=args.input_proj_strength)
-    if 'attn_scale' in sweep_params:
-        sweep_kwargs['attn_scale'] = args.attn_scale
+                        input_proj_strength=args.input_proj_strength, beta=args.beta)
 
     results = run_case_sequence_model_sweep(args.ntrials, spec['model_type'], args.L, args.C + 1,
                                             args.k_dim, args.tf_dim, spec['debug_mode'], mse_loss,
@@ -213,39 +205,46 @@ def demo():
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(device)
 
-    num_letters = 26
-    full_seq_len = 27
-    k_dim = 64
-    tf_dim = 26
-    input_proj_strength = None
+    num_letters = 4
+    full_seq_len = 5
+    k_dim = 32
+    tf_dim = 8
+    input_proj_strength = 1.0
     debug_mode = True
-    item_in_mhn = True
+    item_in_mhn = False
     criterion = mse_loss
-    num_batches = 5000
+    num_batches = 2000
     batch_size = 64
-    lr = 1e-2
-    K_lr = None
-    K_grad_type = 'through_MHN'
+    lr = 1e-3
+    K_lr = 1e-4
+    K_grad_type = 'supervised'
     WV_train_mode = 'via_reinstatement'
     input_dim = 3 * num_letters
     output_dim = 2
     dataset_params = ['case_sequence', num_letters]
 
+    # model = SimplifiedTransformerLayer(input_dim, k_dim, 1, output_dim).to(device)
+    # batch_losses, batch_accs, wv, ul_cov, qk_submat = train_tf_batchmode(model, full_seq_len, dataset_params, criterion,
+    #                    regularizer=None, num_batches=num_batches, batch_size=batch_size, lr=lr,
+    #                    toy_task_mode=False, reduced=False, freeze_K=False, freeze_Q=False, freeze_V=False, manual_grad_calc=False,
+    #                    visualize_QKV_during=False, plot_mode=True, permutation_reduced=False, W_V_fixed=False,
+    #                    full_key_covar=True, plot_freq=300, device=torch.device('cpu'))
+
     # code for training and evaluating a single MHN-transformer model (in batch mode)
     model = OneWinnerMHNLayer(batch_size, input_dim, k_dim, output_dim, tf_dim, input_proj_strength=input_proj_strength,
                               debug_mode=debug_mode, item_in_mhn=item_in_mhn, device=device).to(device)
 
-    # Q_losses, K_losses, V_losses, batch_accs, wv, ul_cov, qk_submat = train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
-    #                              num_batches=num_batches, batch_size=batch_size, lr=lr,
-    #                              freeze_K=False, freeze_Q=False, freeze_V=False,
-    #                              manual_grad_calc=True, plot_mode=True, full_key_covar=True,
-    #                              device=device, K_grad_type=K_grad_type, WV_train_mode=WV_train_mode, K_lr=K_lr)
+    batch_losses, batch_accs, wv, ul_cov, qk_submat, _, _, _ = train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
+                                 num_batches=num_batches, batch_size=batch_size, lr=lr,
+                                 freeze_K=False, freeze_Q=False, freeze_V=False,
+                                 manual_grad_calc=True, plot_mode=True, full_key_covar=True,
+                                 device=device, K_grad_type=K_grad_type, WV_train_mode=WV_train_mode, K_lr=K_lr)
 
-    batch_losses, batch_accs, wv, ul_cov, qk_submat = train_mhn_tf_model_batchmode_fixedK(model, full_seq_len, dataset_params, criterion,
-                                        num_batches=num_batches, batch_size=batch_size, lr=lr, toy_task_mode=False,
-                                        reduced=False, manual_grad_calc=True, visualize_QKV_during=False,
-                                        plot_mode=True, permutation_reduced=False, full_key_covar=True,
-                                        device=torch.device('cpu'), WV_train_mode=WV_train_mode)
+    # batch_losses, batch_accs, wv, ul_cov, qk_submat = train_mhn_tf_model_batchmode_fixedK(model, full_seq_len, dataset_params, criterion,
+    #                                     num_batches=num_batches, batch_size=batch_size, lr=lr, toy_task_mode=False,
+    #                                     reduced=False, manual_grad_calc=True, visualize_QKV_during=False,
+    #                                     plot_mode=True, permutation_reduced=False, full_key_covar=True,
+    #                                     device=torch.device('cpu'), WV_train_mode=WV_train_mode)
 
     plt.figure()
     plt.plot(batch_accs)
@@ -254,14 +253,11 @@ def demo():
     plt.title('Training Accuracy across Batches')
     plt.show()
 
-    plt.figure()
-    # plt.plot(Q_losses, label='Q Loss')
-    # plt.plot(K_losses, label='K Loss')
-    # plt.plot(V_losses, label='V Loss')
-    plt.plot(batch_losses, label='Q Loss')
+    plt.figure(figsize=(10, 5))
+    plt.plot(batch_losses)
     plt.xlabel('Batch')
     plt.ylabel('Loss')
-    plt.title('Q, K, V Losses across Batches')
+    plt.title('Loss across Batches')
     plt.legend()
     plt.show()
 

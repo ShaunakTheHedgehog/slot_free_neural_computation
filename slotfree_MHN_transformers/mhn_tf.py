@@ -358,14 +358,18 @@ def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
     assert dataset_name == 'case_sequence'
     assert len(dataset_params) == 2
     assert WV_train_mode in ['via_reinstatement', 'via_MHN_output']
+    assert manual_grad_calc or WV_train_mode == 'via_reinstatement', 'via_MHN_output has no autograd equivalent'
+
     num_letters = dataset_params[1]
 
     K_losses = []
     V_losses = []
     Q_losses = []
-    accs = []
 
-    assert K_grad_type == 'through_MHN' or K_grad_type=='supervised' or K_grad_type=='Hebbian'
+    batch_accs = []
+    batch_losses = []
+
+    assert K_grad_type == 'through_MHN' or K_grad_type=='supervised'
 
     for i in range(num_batches):
         # first, generate a batch of training sequences
@@ -384,8 +388,15 @@ def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
         # forward pass through model + calculating accuracy at current batch
         Q_output, reinst_context, x_Q = model(inputs)
         train_acc = get_acc(Q_output, targets)
+        batch_accs.append(train_acc.item())
+
+        batch_loss = criterion(Q_output, targets)
+        batch_losses.append(batch_loss.item() / batch_size)
 
         x_V_out = model.W_V(reinst_context)
+
+        # capture current W_Q weights before they are updated
+        W_Q_curr = model.W_Q.weight.data.clone()
 
         # calculate losses and update weights -- either manually or automatically
         manual_Q_grad, manual_K_grad, manual_V_grad = None, None, None
@@ -393,13 +404,14 @@ def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
             manual_Q_grad, manual_V_grad = calculate_mhn_tf_QV_grads(batch_size, x_V_out, targets, model.W_Q.weight.data,
                                                                      model.one_win_mhn.W_hi.data, model.one_win_mhn.W_reinst,
                                                                      model.W_V.weight.data, inputs, reinst_context,
-                                                                     device=device, WV_train_mode=WV_train_mode, MHN_out=Q_output)
+                                                                     device=device, WV_train_mode=WV_train_mode, MHN_out=Q_output, beta=model.beta)
 
 
         if not freeze_Q:
             # W_Q update
 
-            Q_loss = criterion(Q_output, targets)
+            # Q_loss = criterion(Q_output, targets)
+            Q_loss = criterion(x_V_out, targets)
             Q_losses.append(Q_loss.item() / batch_size)
 
             if manual_grad_calc:
@@ -407,7 +419,6 @@ def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
             else:
                 model.W_Q.weight.grad = None
 
-                # currently, gets loss for output during query timestep, rather than for W_V applied to reinstated x_tilde
                 Q_loss.backward()
                 with torch.no_grad():
                     model.W_Q.weight.data = model.W_Q.weight.data - lr * model.W_Q.weight.grad
@@ -434,9 +445,15 @@ def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
             if K_lr is None:
               K_lr = lr
             reinst_context = reinst_context.detach().requires_grad_(True)
-            reinst_out_K, _ = model.reinst_context_forward(reinst_context)
+            K_loss = None 
 
-            K_loss = criterion(reinst_out_K, targets)
+            if K_grad_type == 'through_MHN':
+                reinst_out_K, _ = model.reinst_context_forward(reinst_context)
+                K_loss = criterion(reinst_out_K, targets)
+            else:
+                # K_grad_type == 'supervised'
+                K_loss = criterion(model.W_K(reinst_context), x_Q.detach())
+            
             K_losses.append(K_loss.item() / batch_size)
 
             if manual_grad_calc:
@@ -444,11 +461,10 @@ def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
 
                 if K_grad_type == 'through_MHN':
                     manual_K_grad = calculate_mhn_tf_K_grad(batch_size, reinst_out_K, targets, model.W_K.weight.data,
-                                                    model.one_win_mhn.W_hi.data, model.one_win_mhn.W_oh.data, reinst_context, device=device)
-                elif K_grad_type == 'supervised':
-                    manual_K_grad = simple_K_update(model.W_K.weight.data, reinst_context, model.W_Q.weight.data, inputs[:, -1, :], update_type='supervised', device=device)
-                else:
-                    manual_K_grad = simple_K_update(model.W_K.weight.data, reinst_context, model.W_Q.weight.data, inputs[:, -1, :], update_type='Hebbian', device=device)
+                                                    model.one_win_mhn.W_hi.data, model.one_win_mhn.W_oh.data, reinst_context, device=device, beta=model.beta)
+                else: 
+                    # K_grad_type == 'supervised'
+                    manual_K_grad = simple_K_update(model.W_K.weight.data, reinst_context, W_Q_curr, inputs[:, -1, :], update_type='supervised', device=device)
 
                 model.W_K.weight.data = model.W_K.weight.data - K_lr * manual_K_grad
             else:
@@ -456,9 +472,6 @@ def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
                 K_loss.backward()
                 with torch.no_grad():
                     model.W_K.weight.data = model.W_K.weight.data - K_lr * model.W_K.weight.grad
-
-
-        accs.append(train_acc.item())
 
         # periodically visualize learned Q, K, V weights and covariance matrices
         if visualize_QKV_during and (i % plot_every == 0):
@@ -471,7 +484,7 @@ def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
         else:
             curr_loss = Q_losses[-1]
         pbar.set_description("Batch {:03} Train (Q) Loss {:.4f} Train Acc {:.4f}"\
-                            .format(i+1, curr_loss, accs[-1]))
+                            .format(i+1, curr_loss, batch_accs[-1]))
 
         pbar.update(1)
         
@@ -480,7 +493,7 @@ def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
             wv, qk_submat = visualize_QKV_matrices(model, 'mhn_tf', label='', plot_mode=plot_mode, W_V_lims=[0., 1., 0.2], QK_lims=[-2., 8., 2])
             ul_cov = visualize_uppercase_lowercase_covariance(num_letters, model.W_K.weight.data, '', plot_mode=plot_mode, KK_lims=[-2., 8., 2], full=full_key_covar)
 
-    return Q_losses, K_losses, V_losses, accs, wv, ul_cov, qk_submat
+    return batch_losses, batch_accs, wv, ul_cov, qk_submat, Q_losses, K_losses, V_losses
 
 
 # same as train_mhn_tf_model_batchmode, but with W_K fixed throughout training
@@ -520,6 +533,7 @@ def train_mhn_tf_model_batchmode_fixedK(model, full_seq_len, dataset_params, cri
     num_letters = dataset_params[1]
 
     assert WV_train_mode in ['via_reinstatement', 'via_MHN_output']
+    assert manual_grad_calc or WV_train_mode == 'via_reinstatement', 'via_MHN_output has no autograd equivalent'
 
     batch_losses = []
     batch_accs = []
@@ -539,21 +553,27 @@ def train_mhn_tf_model_batchmode_fixedK(model, full_seq_len, dataset_params, cri
 
         Q_output, reinst_context, x_Q = model(inputs)
         train_acc = get_acc(Q_output, targets)
+        batch_loss = criterion(Q_output, targets)
+
+        # get batch avged losses and add to train/val loss list
+        curr_loss = batch_loss.item() / batch_size
+        batch_losses.append(curr_loss)
+        batch_accs.append(train_acc.item())
 
         reinst_out = model.W_V(reinst_context)
 
-        batch_loss = criterion(reinst_out, targets)
+        reinst_loss = criterion(reinst_out, targets)
 
         if manual_grad_calc:
             Q_grad, V_grad = calculate_mhn_tf_QV_grads(batch_size, reinst_out, targets, model.W_Q.weight.data, model.one_win_mhn.W_hi.data,
                                                 model.one_win_mhn.W_reinst, model.W_V.weight.data, inputs, reinst_context, device=device,
-                                                WV_train_mode=WV_train_mode, MHN_out=Q_output)
+                                                WV_train_mode=WV_train_mode, MHN_out=Q_output, beta=model.beta)
             model.W_Q.weight.data = model.W_Q.weight.data - lr * Q_grad
             model.W_V.weight.data = model.W_V.weight.data - lr * V_grad
 
         else:
             model.W_Q.weight.grad = None
-            batch_loss.backward()
+            reinst_loss.backward()
 
             with torch.no_grad():
                 model.W_Q.weight.data = model.W_Q.weight.data - lr * model.W_Q.weight.grad
@@ -567,12 +587,6 @@ def train_mhn_tf_model_batchmode_fixedK(model, full_seq_len, dataset_params, cri
 
             with torch.no_grad():
                 model.W_V.weight.data = model.W_V.weight.data - lr * model.W_V.weight.grad
-
-        # get batch avged losses and add to train/val loss list
-        curr_loss = batch_loss.item() / batch_size
-        batch_losses.append(curr_loss)
-
-        batch_accs.append(train_acc.item())
 
         if visualize_QKV_during and (i % 500 == 0):
           _, _ = visualize_QKV_matrices(model, 'mhn_tf', label='')
@@ -596,8 +610,9 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
                                   debug_mode, criterion, num_batches, batch_size, lr,
                                   K_lr=None, K_grad_type='through_MHN', final_window=1_000,
                                   device=torch.device('cpu'), manual_grad_calc=True, save_dir='',
-                                  WV_train_mode='via_reinstatement', item_in_mhn=False, input_proj_strength=1.0):
-    
+                                  WV_train_mode='via_reinstatement', item_in_mhn=False, input_proj_strength=1.0,
+                                  beta=1.0):
+
     '''
     Runs a sweep over multiple trials of an MHN-based Transformer model on the case sequence task.
 
@@ -615,6 +630,7 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
     lr : float : learning rate for gradient descent 
     K_grad_type : str : type of W_K gradient to use ('through_MHN' (through MHN), 'supervised', or 'none')
     WV_train_mode : str : whether to train W_V 'via_reinstatement' or 'via_MHN_output'
+    beta : float : inverse temperature multiplying the attention logits (baseline and MHN models alike)
 
     Returns:
     results_dict : dict : dictionary containing mean and all accuracies and losses, as well as weight and covariance stats
@@ -665,7 +681,7 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
             assert tf_dim is None
             assert K_grad_type == 'none'
 
-            tf = SimplifiedTransformerLayer(input_dim, k_dim, n_heads, output_dim).to(device)
+            tf = SimplifiedTransformerLayer(input_dim, k_dim, n_heads, output_dim, beta=beta).to(device)
 
             batch_losses, batch_accs, wv, ul_cov, qk_cov = train_tf_batchmode(tf, full_seq_len, dataset_params, criterion=criterion,
                                                                               num_batches=num_batches, batch_size=batch_size, lr=lr,
@@ -674,7 +690,7 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
         elif model_type == 'mhn_tf_fixed_WK':
             assert tf_dim is not None
             assert K_grad_type == 'none'
-            mhn_tf = OneWinnerMHNLayer(batch_size, input_dim, k_dim, output_dim, tf_dim, input_proj_strength=input_proj_strength,
+            mhn_tf = OneWinnerMHNLayer(batch_size, input_dim, k_dim, output_dim, tf_dim, input_proj_strength=input_proj_strength, softmax_beta=beta,
                                        debug_mode=debug_mode, item_in_mhn=item_in_mhn, device=device).to(device)
 
             batch_losses, batch_accs, wv, ul_cov, qk_cov = train_mhn_tf_model_batchmode_fixedK(mhn_tf, full_seq_len, dataset_params, criterion=criterion,
@@ -685,11 +701,10 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
             assert model_type == 'mhn_tf'
             assert tf_dim is not None
             assert K_grad_type in ['through_MHN', 'supervised']
-            mhn_tf = OneWinnerMHNLayer(batch_size, input_dim, k_dim, output_dim, tf_dim, input_proj_strength=input_proj_strength,
+            mhn_tf = OneWinnerMHNLayer(batch_size, input_dim, k_dim, output_dim, tf_dim, input_proj_strength=input_proj_strength, softmax_beta=beta,
                                        debug_mode=debug_mode, item_in_mhn=item_in_mhn, device=device).to(device)
 
-            # here, batch_losses refers to Q_losses
-            batch_losses, _, _, batch_accs, wv, ul_cov, qk_cov = train_mhn_tf_model_batchmode(mhn_tf, full_seq_len, dataset_params, criterion=criterion, num_batches=num_batches,
+            batch_losses, batch_accs, wv, ul_cov, qk_cov, _, _, _ = train_mhn_tf_model_batchmode(mhn_tf, full_seq_len, dataset_params, criterion=criterion, num_batches=num_batches,
                                                                                               batch_size=batch_size, lr=lr, manual_grad_calc=manual_grad_calc, K_lr=K_lr, K_grad_type=K_grad_type,
                                                                                               plot_mode=False, device=device, WV_train_mode=WV_train_mode)
 
