@@ -213,7 +213,7 @@ def demo():
     debug_mode = True
     item_in_mhn = False
     criterion = mse_loss
-    num_batches = 2000
+    num_batches = 100
     batch_size = 64
     lr = 1e-3
     K_lr = 1e-4
@@ -223,7 +223,7 @@ def demo():
     output_dim = 2
     dataset_params = ['case_sequence', num_letters]
 
-    # model = SimplifiedTransformerLayer(input_dim, k_dim, 1, output_dim).to(device)
+    # model = SimplifiedTransformerLayer(input_dim, k_dim, output_dim).to(device)
     # batch_losses, batch_accs, wv, ul_cov, qk_submat = train_tf_batchmode(model, full_seq_len, dataset_params, criterion,
     #                    regularizer=None, num_batches=num_batches, batch_size=batch_size, lr=lr,
     #                    toy_task_mode=False, reduced=False, freeze_K=False, freeze_Q=False, freeze_V=False, manual_grad_calc=False,
@@ -238,8 +238,9 @@ def demo():
                                  num_batches=num_batches, batch_size=batch_size, lr=lr,
                                  freeze_K=False, freeze_Q=False, freeze_V=False,
                                  manual_grad_calc=True, plot_mode=True, full_key_covar=True,
-                                 device=device, K_grad_type=K_grad_type, WV_train_mode=WV_train_mode, K_lr=K_lr)
+                                 device=device, K_grad_type=K_grad_type, WV_train_mode=WV_train_mode, K_lr=K_lr, print_display=False)
 
+    print('done!')
     # batch_losses, batch_accs, wv, ul_cov, qk_submat = train_mhn_tf_model_batchmode_fixedK(model, full_seq_len, dataset_params, criterion,
     #                                     num_batches=num_batches, batch_size=batch_size, lr=lr, toy_task_mode=False,
     #                                     reduced=False, manual_grad_calc=True, visualize_QKV_during=False,

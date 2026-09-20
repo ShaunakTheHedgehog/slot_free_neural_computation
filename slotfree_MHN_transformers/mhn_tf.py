@@ -324,7 +324,7 @@ def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
                                  reduced=False, freeze_K=False, freeze_Q=False, freeze_V=False,
                                  manual_grad_calc=False, visualize_QKV_during=False, K_lr=None, K_grad_type='through_MHN',
                                  plot_mode=True, permutation_reduced=False, plot_every=100, full_key_covar=True,
-                                 WV_train_mode='via_reinstatement', device=torch.device('cpu')):
+                                 WV_train_mode='via_reinstatement', device=torch.device('cpu'), print_display=True):
     
     '''
     Trains an MHN-based Transformer model in batch mode, with options to freeze Q, K, V 
@@ -338,7 +338,7 @@ def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
     num_batches : int : number of training batches
     batch_size : int : number of sequences per batch
     lr : float : learning rate for gradient descent
-    K_grad_type : str : type of W_K gradient to use ('through_MHN' (through MHN), 'supervised', or 'Hebbian')
+    K_grad_type : str : type of W_K gradient to use ('through_MHN', 'supervised', 'none')
     WV_train_mode : str : whether to train W_V 'via_reinstatement' or 'via_MHN_output'
 
     Returns:
@@ -350,9 +350,11 @@ def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
     ul_cov : np.array : learned uppercase-lowercase covariance matrix at end of training
     qk_submat : np.array : learned query-key covariance submatrix at end of training
     '''
-    # setup progress bar
-    pbar = trange(num_batches)
-    pbar.set_description("---")
+
+    if print_display:
+        # setup progress bar
+        pbar = trange(num_batches)
+        pbar.set_description("---")
 
     dataset_name = dataset_params[0]
     assert dataset_name == 'case_sequence'
@@ -369,7 +371,14 @@ def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
     batch_accs = []
     batch_losses = []
 
-    assert K_grad_type == 'through_MHN' or K_grad_type=='supervised'
+    auto_batch_accs = []
+    auto_batch_losses = []
+
+    wv, ul_cov, qk_submat = None, None, None 
+
+    assert K_grad_type == 'through_MHN' or K_grad_type=='supervised' or K_grad_type == 'none'
+    if freeze_K:
+        assert K_grad_type == 'none'
 
     for i in range(num_batches):
         # first, generate a batch of training sequences
@@ -442,6 +451,7 @@ def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
 
 
         if not freeze_K:
+            assert K_grad_type in ['through_MHN', 'supervised']
             if K_lr is None:
               K_lr = lr
             reinst_context = reinst_context.detach().requires_grad_(True)
@@ -450,7 +460,7 @@ def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
             if K_grad_type == 'through_MHN':
                 reinst_out_K, _ = model.reinst_context_forward(reinst_context)
                 K_loss = criterion(reinst_out_K, targets)
-            else:
+            elif K_grad_type == 'supervised':
                 # K_grad_type == 'supervised'
                 K_loss = criterion(model.W_K(reinst_context), x_Q.detach())
             
@@ -483,13 +493,15 @@ def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
             curr_loss = V_losses[-1]
         else:
             curr_loss = Q_losses[-1]
-        pbar.set_description("Batch {:03} Train (Q) Loss {:.4f} Train Acc {:.4f}"\
-                            .format(i+1, curr_loss, batch_accs[-1]))
 
-        pbar.update(1)
+        if print_display:
+            pbar.set_description("Batch {:03} Train (Q) Loss {:.4f} Train Acc {:.4f}"\
+                                .format(i+1, curr_loss, batch_accs[-1]))
+
+            pbar.update(1)
         
         # visualize learned Q, K, V weights and covariance matrices at the end of training
-        if i==num_batches-1:
+        if (i==num_batches-1):
             wv, qk_submat = visualize_QKV_matrices(model, 'mhn_tf', label='', plot_mode=plot_mode, W_V_lims=[0., 1., 0.2], QK_lims=[-2., 8., 2])
             ul_cov = visualize_uppercase_lowercase_covariance(num_letters, model.W_K.weight.data, '', plot_mode=plot_mode, KK_lims=[-2., 8., 2], full=full_key_covar)
 
@@ -501,7 +513,7 @@ def train_mhn_tf_model_batchmode_fixedK(model, full_seq_len, dataset_params, cri
                                         num_batches=20_000, batch_size=128, lr=1e-3, toy_task_mode=False,
                                         reduced=False, manual_grad_calc=False, visualize_QKV_during=False,
                                         plot_mode=True, permutation_reduced=False, full_key_covar=True,
-                                        device=torch.device('cpu'), WV_train_mode='via_reinstatement'):
+                                        device=torch.device('cpu'), WV_train_mode='via_reinstatement', print_display=True):
     
     '''
     Trains an MHN-based Transformer model in batch mode with W_K fixed, with options to manually compute gradients.
@@ -523,9 +535,11 @@ def train_mhn_tf_model_batchmode_fixedK(model, full_seq_len, dataset_params, cri
     ul_cov : np.array : learned uppercase-lowercase covariance matrix at end of training
     qk_submat : np.array : learned query-key covariance submatrix at end of training
     '''
-    # setup progress bar
-    pbar = trange(num_batches)
-    pbar.set_description("---")
+
+    if print_display:
+        # setup progress bar
+        pbar = trange(num_batches)
+        pbar.set_description("---")
 
     dataset_name = dataset_params[0]
     assert dataset_name == 'case_sequence'
@@ -537,6 +551,7 @@ def train_mhn_tf_model_batchmode_fixedK(model, full_seq_len, dataset_params, cri
 
     batch_losses = []
     batch_accs = []
+    wv, ul_cov, qk_submat = None, None, None 
 
     for i in range(num_batches):
         inputs, targets = None, None
@@ -592,12 +607,13 @@ def train_mhn_tf_model_batchmode_fixedK(model, full_seq_len, dataset_params, cri
           _, _ = visualize_QKV_matrices(model, 'mhn_tf', label='')
           _ = visualize_uppercase_lowercase_covariance(num_letters, model.W_K.weight.data, '')
 
-        pbar.set_description("Batch {:03} Train Loss {:.4f} Train Acc {:.4f}"\
-                            .format(i+1, curr_loss, batch_accs[-1]))
+        if print_display:
+            pbar.set_description("Batch {:03} Train Loss {:.4f} Train Acc {:.4f}"\
+                                .format(i+1, curr_loss, batch_accs[-1]))
 
-        pbar.update(1)
+            pbar.update(1)
 
-        if i==num_batches-1:
+        if (i==num_batches-1):
             wv, qk_submat = visualize_QKV_matrices(model, 'mhn_tf', label='', plot_mode=plot_mode)
             ul_cov = visualize_uppercase_lowercase_covariance(num_letters, model.W_K.weight.data, '', plot_mode=plot_mode, full=full_key_covar)
 
@@ -648,7 +664,6 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
         save_dir = save_dir + '/'
 
     input_dim = 3 * num_letters
-    n_heads = 1
     output_dim = 2
     dataset_params = ['case_sequence', num_letters]
 
@@ -681,7 +696,7 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
             assert tf_dim is None
             assert K_grad_type == 'none'
 
-            tf = SimplifiedTransformerLayer(input_dim, k_dim, n_heads, output_dim, beta=beta).to(device)
+            tf = SimplifiedTransformerLayer(input_dim, k_dim, output_dim, beta=beta).to(device)
 
             batch_losses, batch_accs, wv, ul_cov, qk_cov = train_tf_batchmode(tf, full_seq_len, dataset_params, criterion=criterion,
                                                                               num_batches=num_batches, batch_size=batch_size, lr=lr,
@@ -755,3 +770,181 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
     print(f'\nMedian Loss: {np.median(all_losses, 0)}')
 
     return full_results_dict
+
+
+def compare_manual_vs_auto(model_params, full_seq_len, dataset_params, criterion,
+                                 num_batches=2_000, batch_size=64, lr=1e-3, 
+                                 freeze_K=False, freeze_Q=False, freeze_V=False,
+                                 K_lr=None, K_grad_type='through_MHN', add_proj=False, item_in_mhn=False,
+                                 WV_train_mode='via_reinstatement', device=torch.device('cpu')):
+    
+    (batch_size, input_dim, k_dim, v_dim, tf_dim) = model_params
+    
+    # create separate but identical copies, one to update automatically and one manually
+    auto_model = OneWinnerMHNLayer(batch_size, input_dim, k_dim, v_dim, tf_dim, debug_mode=add_proj, item_in_mhn=item_in_mhn).to(device)
+
+    manual_model = deepcopy(auto_model)
+
+    if freeze_K:
+        auto_model_fixedK = deepcopy(auto_model)
+        manual_model_fixedK = deepcopy(manual_model)
+    # OneWinnerMHNLayer(batch_size, input_dim, k_dim, v_dim, tf_dim, debug_mode=add_proj, item_in_mhn=item_in_mhn).to(device)
+    # manual_model.load_state_dict(auto_model.state_dict())
+
+    # setup progress bar
+    pbar = trange(num_batches)
+    pbar.set_description("---")
+
+    all_auto_losses = []
+    all_auto_accs = []
+
+    all_manual_losses = []
+    all_manual_accs = []
+
+    # now, compare the models' training performance (weights, loss, acc) step by step
+    for i in range(num_batches):
+        seed = 1234 + i
+
+        torch.manual_seed(seed); np.random.seed(seed); random.seed(seed)
+
+        auto_WQ = auto_model.W_Q.weight.data.clone()
+        auto_WK = auto_model.W_K.weight.data.clone()
+        auto_WV = auto_model.W_V.weight.data.clone()
+
+        # first run train_tf_batchmode for one step on each model
+        auto_losses, auto_accs, auto_wv, auto_ul_cov, auto_qk_submat, *_ = train_mhn_tf_model_batchmode(auto_model, full_seq_len, dataset_params, criterion,
+                                                                                          num_batches=1, batch_size=batch_size, lr=lr,
+                                                                                          freeze_K=freeze_K, freeze_Q=freeze_Q, freeze_V=freeze_V,
+                                                                                          manual_grad_calc=False, visualize_QKV_during=False,
+                                                                                          K_lr=K_lr, K_grad_type=K_grad_type, device=device,
+                                                                                          WV_train_mode=WV_train_mode, plot_mode=False, print_display=False)
+
+        torch.manual_seed(seed); np.random.seed(seed); random.seed(seed)
+
+        manual_WQ = manual_model.W_Q.weight.data.clone()
+        manual_WK = manual_model.W_K.weight.data.clone()
+        manual_WV = manual_model.W_V.weight.data.clone()
+
+        manual_losses, manual_accs, manual_wv, manual_ul_cov, manual_qk_submat, *_ = train_mhn_tf_model_batchmode(manual_model, full_seq_len, dataset_params, criterion,
+                                                                                          num_batches=1, batch_size=batch_size, lr=lr,
+                                                                                          freeze_K=freeze_K, freeze_Q=freeze_Q, freeze_V=freeze_V,
+                                                                                          manual_grad_calc=True, visualize_QKV_during=False,
+                                                                                          K_lr=K_lr, K_grad_type=K_grad_type, device=device,
+                                                                                          WV_train_mode=WV_train_mode, plot_mode=False, print_display=False)
+
+        if freeze_K:
+            # in this case, check that train_tf_batchmode_fixedK gives the same results as train_tf_batchmode with freeze_K=True
+            auto_WQ_fixedK = auto_model_fixedK.W_Q.weight.data.clone()
+            auto_WK_fixedK = auto_model_fixedK.W_K.weight.data.clone()
+            auto_WV_fixedK = auto_model_fixedK.W_V.weight.data.clone()
+
+            torch.manual_seed(seed); np.random.seed(seed); random.seed(seed)
+            auto_losses_fixedK, auto_accs_fixedK, auto_wv_fixedK, auto_ul_cov_fixedK, auto_qk_submat_fixedK = train_mhn_tf_model_batchmode_fixedK(auto_model_fixedK, full_seq_len, dataset_params, criterion,
+                                                                                          num_batches=1, batch_size=batch_size, lr=lr,
+                                                                                          manual_grad_calc=False, visualize_QKV_during=False,
+                                                                                          device=device,
+                                                                                          WV_train_mode=WV_train_mode, plot_mode=False, print_display=False)      
+
+            manual_WQ_fixedK = manual_model_fixedK.W_Q.weight.data.clone()
+            manual_WK_fixedK = manual_model_fixedK.W_K.weight.data.clone()
+            manual_WV_fixedK = manual_model_fixedK.W_V.weight.data.clone()
+
+            torch.manual_seed(seed); np.random.seed(seed); random.seed(seed)
+            manual_losses_fixedK, manual_accs_fixedK, manual_wv_fixedK, manual_ul_cov_fixedK, manual_qk_submat_fixedK = train_mhn_tf_model_batchmode_fixedK(manual_model_fixedK, full_seq_len, dataset_params, criterion,
+                                                                                          num_batches=1, batch_size=batch_size, lr=lr,
+                                                                                          manual_grad_calc=True, visualize_QKV_during=False,
+                                                                                          device=device,
+                                                                                          WV_train_mode=WV_train_mode, plot_mode=False, print_display=False)                                                                       
+
+        # compare the losses, accuracies, and weights of the two models
+        tol = 1e-5
+        assert np.isclose(auto_losses[-1], manual_losses[-1], atol=tol), f"Losses differ at batch {i}: auto {auto_losses[-1]}, manual {manual_losses[-1]}"
+        assert np.isclose(auto_accs[-1], manual_accs[-1], atol=tol), f"Accuracies differ at batch {i}: auto {auto_accs[-1]}, manual {manual_accs[-1]}"
+        # assert np.allclose(auto_wv, manual_wv, atol=tol), f"W_V weights differ at batch {i}"
+        # assert np.allclose(auto_ul_cov, manual_ul_cov, atol=tol), f"Upper-lower covariance matrices differ at batch {i}"
+        # assert np.allclose(auto_qk_submat, manual_qk_submat, atol=tol), f"Query-key covariance submatrices differ at batch {i}"
+        assert np.allclose(auto_model.W_Q.weight.data, manual_model.W_Q.weight.data, atol=tol), f"W_Q weights differ at batch {i}"
+        assert np.allclose(auto_model.W_K.weight.data, manual_model.W_K.weight.data, atol=tol), f"W_K weights differ at batch {i}"
+        assert np.allclose(auto_model.W_V.weight.data, manual_model.W_V.weight.data, atol=tol), f"W_V weights differ at batch {i}"
+
+        if freeze_K:
+            assert np.isclose(auto_losses_fixedK[-1], manual_losses_fixedK[-1], atol=tol), f"Losses differ at batch {i} (fixed K): auto {auto_losses_fixedK[-1]}, manual {manual_losses_fixedK[-1]}"
+            assert np.isclose(auto_accs_fixedK[-1], manual_accs_fixedK[-1], atol=tol), f"Accuracies differ at batch {i} (fixed K): auto {auto_accs_fixedK[-1]}, manual {manual_accs_fixedK[-1]}"
+            # assert np.allclose(auto_wv_fixedK, manual_wv_fixedK, atol=tol), f"W_V weights differ at batch {i} (fixed K)"
+            # assert np.allclose(auto_ul_cov_fixedK, manual_ul_cov_fixedK, atol=tol), f"Upper-lower covariance matrices differ at batch {i} (fixed K)"
+            # assert np.allclose(auto_qk_submat_fixedK, manual_qk_submat_fixedK, atol=tol), f"Query-key covariance submatrices differ at batch {i} (fixed K)"
+            assert np.allclose(auto_model_fixedK.W_Q.weight.data, manual_model_fixedK.W_Q.weight.data, atol=tol), f"W_Q weights differ at batch {i} (fixed K)"
+            assert np.allclose(auto_model_fixedK.W_K.weight.data, manual_model_fixedK.W_K.weight.data, atol=tol), f"W_K weights differ at batch {i} (fixed K)"
+            assert np.allclose(auto_model_fixedK.W_V.weight.data, manual_model_fixedK.W_V.weight.data, atol=tol), f"W_V weights differ at batch {i} (fixed K)"
+
+            # also check that the fixed K versions match the non-fixed K versions when freeze_K=True
+            assert np.isclose(auto_losses_fixedK[-1], auto_losses[-1], atol=tol), f"Losses differ at batch {i} (fixed K vs non-fixed K): auto {auto_losses_fixedK[-1]}, auto {auto_losses[-1]}"
+            assert np.isclose(manual_losses_fixedK[-1], manual_losses[-1], atol=tol), f"Losses differ at batch {i} (fixed K vs non-fixed K): manual {manual_losses_fixedK[-1]}, manual {manual_losses[-1]}"
+            assert np.isclose(auto_accs_fixedK[-1], auto_accs[-1], atol=tol), f"Accuracies differ at batch {i} (fixed K vs non-fixed K): auto {auto_accs_fixedK[-1]}, auto {auto_accs[-1]}"
+            assert np.isclose(manual_accs_fixedK[-1], manual_accs[-1], atol=tol), f"Accuracies differ at batch {i} (fixed K vs non-fixed K): manual {manual_accs_fixedK[-1]}, manual {manual_accs[-1]}"
+            # assert np.allclose(auto_wv_fixedK, auto_wv, atol=tol), f"W_V weights differ at batch {i} (fixed K vs non-fixed K)"
+            # assert np.allclose(manual_wv_fixedK, manual_wv, atol=tol), f"W_V weights differ at batch {i} (fixed K vs non-fixed K)"
+            # assert np.allclose(auto_ul_cov_fixedK, auto_ul_cov, atol=tol), f"Upper-lower covariance matrices differ at batch {i} (fixed K vs non-fixed K)"
+            # assert np.allclose(manual_ul_cov_fixedK, manual_ul_cov, atol=tol), f"Upper-lower covariance matrices differ at batch {i} (fixed K vs non-fixed K)"
+            # assert np.allclose(auto_qk_submat_fixedK, auto_qk_submat, atol=tol), f"Query-key covariance submatrices differ at batch {i} (fixed K vs non-fixed K)"
+            # assert np.allclose(manual_qk_submat_fixedK, manual_qk_submat, atol=tol), f"Query-key covariance submatrices differ at batch {i} (fixed K vs non-fixed K)"
+            assert np.allclose(auto_WQ_fixedK, auto_WQ, atol=tol), f"W_Q weights differ at batch {i} (fixed K vs non-fixed K)"
+            assert np.allclose(manual_WQ_fixedK, manual_WQ, atol=tol), f"W_Q weights differ at batch {i} (fixed K vs non-fixed K)"
+            assert np.allclose(auto_WK_fixedK, auto_WK, atol=tol), f"W_K weights differ at batch {i} (fixed K vs non-fixed K)"
+            assert np.allclose(manual_WK_fixedK, manual_WK, atol=tol), f"W_K weights differ at batch {i} (fixed K vs non-fixed K)"
+            assert np.allclose(auto_WV_fixedK, auto_WV, atol=tol), f"W_V weights differ at batch {i} (fixed K vs non-fixed K)"
+            assert np.allclose(manual_WV_fixedK, manual_WV, atol=tol), f"W_V weights differ at batch {i} (fixed K vs non-fixed K)"
+
+        all_auto_losses.append(auto_losses[-1])
+        all_auto_accs.append(auto_accs[-1])
+        all_manual_losses.append(manual_losses[-1])
+        all_manual_accs.append(manual_accs[-1])
+
+        # update display
+        pbar.set_description("Batch {:03} Auto Train Loss {:.4f} Auto Train Acc {:.4f} Manual Train Loss {:.4f} Manual Train Acc {:.4f}"\
+                            .format(i+1, all_auto_losses[-1], all_auto_accs[-1], all_manual_losses[-1], all_manual_accs[-1]))
+
+        pbar.update(1)
+
+    return all_auto_losses, all_auto_accs, all_manual_losses, all_manual_accs
+
+
+if __name__ == "__main__":
+    B = 64
+    L = 4
+    C = 4
+    lr = 1e-3
+    K_lr = None
+    model_params = (B, 3*L, 32, 2, 8)  # batch_size, input_dim, k_dim, v_dim, tf_dim
+    dataset_params = ['case_sequence', L]
+    criterion = mse_loss 
+    K_grad_type = 'none'
+    freeze_K = True
+    add_proj = False
+    item_in_mhn = False
+
+    auto_losses, auto_accs, manual_losses, manual_accs = compare_manual_vs_auto(model_params, C+1, dataset_params, criterion,
+                                    num_batches=5_000, batch_size=B, lr=lr, 
+                                    freeze_K=freeze_K, freeze_Q=False, freeze_V=False,
+                                    K_lr=K_lr, K_grad_type=K_grad_type, add_proj=add_proj, item_in_mhn=item_in_mhn,
+                                    WV_train_mode='via_reinstatement', device=torch.device('cpu'))
+
+
+    # plot
+    plt.figure(figsize=(8, 4))
+    plt.subplot(1, 2, 1)
+    plt.plot(auto_losses, label='automatic')
+    plt.plot(manual_losses, label='manual')
+    plt.title('Training Loss')
+    plt.xlabel('Batch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.subplot(1, 2, 2)
+    plt.plot(auto_accs, label='automatic')
+    plt.plot(manual_accs, label='manual')
+    plt.title('Training Accuracy')
+    plt.xlabel('Batch')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
