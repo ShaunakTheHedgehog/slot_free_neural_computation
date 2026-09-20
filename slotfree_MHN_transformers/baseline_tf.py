@@ -11,7 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader, TensorDataset
 
-from einops import rearrange, repeat
+# from einops import rearrange, repeat
 
 from tqdm.auto import trange
 from copy import deepcopy
@@ -37,7 +37,7 @@ def generate_attn_mask(seq_len, type='causal'):
     attn_mask[-1, :-1] = torch.ones(seq_len-1)
     attn_mask[-1, -1] = 0
 
-  return attn_mask
+  return attn_mask.bool()
 
 
 
@@ -51,22 +51,18 @@ class Attention(nn.Module):
     Multi-head attention mechanism.
     '''
 
-    def __init__(self, embed_dim, tf_dim, v_dim, n_heads=1, dropout=0., project_out=False, W_V_init=None, beta=1.0):
+    def __init__(self, embed_dim, tf_dim, v_dim, dropout=0., W_V_init=None, beta=1.0):
         '''
         args
         ----
         embed_dim : int,
             the input dim for each item in sequence
         tf_dim : int
-            the total dim of the transformer (should be divisible by n_heads)
+            the total dim of the transformer 
         v_dim : int
             the dim of the value vectors (output vectors)
-        n_heads : int
-            number of attention heads
         dropout : float
             dropout prob applied to the attention weights
-        project_out : bool
-            whether to apply a final linear projection to the output of the attention layer
         W_V_init : torch.tensor
             if provided, initializes W_V to this value (should have shape (v_dim, embed_dim))
         beta : float
@@ -74,12 +70,15 @@ class Attention(nn.Module):
         '''
         super().__init__()
 
-        self.n_heads = n_heads
+        # self.n_heads = n_heads
+        # assert n_heads == 1, "Currently only supports single-head attention"
+
         self.embed_dim = embed_dim
         self.attn_dim = tf_dim
+        self.v_dim = v_dim
 
-        dim_head = tf_dim // n_heads
-        assert dim_head * n_heads == tf_dim, "embed_dim must be divisible by num_heads"
+        # dim_head = tf_dim // n_heads
+        # assert dim_head * n_heads == tf_dim, "embed_dim must be divisible by num_heads"
 
         # self.scale = (dim_head ** (-0.5))
         self.beta = beta
@@ -103,138 +102,64 @@ class Attention(nn.Module):
 
         self.attn_dropout = nn.Dropout(dropout)
 
-        self.to_out = nn.Sequential(
-            nn.Linear(tf_dim, embed_dim),
-            nn.Dropout(dropout)
-        ) if project_out else nn.Identity()
 
-
-    def forward(self, q, k, v, attn_mask=None, return_attn=False, attn_type='independent'):
+    def forward(self, q, k, v, return_attn=False, attn_type='independent'):
         '''
         args
         ----
         q : torch.tensor
-            shape `(batch, n_target_item, embed_dim)`       # for our case, n_target_item = n_source_item...
-        k/v : torch.tensor
-            shape `(batch, n_source_item, embed_dim)`
+            shape `(batch, seq_len, embed_dim)`      
+        k : torch.tensor
+            shape `(batch, seq_len, embed_dim)`
+        v : torch.tensor
+            shape `(batch, seq_len, v_dim)`
         attn_mask : torch.bool
-            shape `(n_target_item, n_source_item)` or `(batch, n_target_item, n_source_item)`
-            positions with ``True`` are allowed to attend while ``False`` are marked with -inf
+            shape `(seq_len, seq_len)`, where
+            positions with ``True`` are allowed to attend while ``False`` are marked with -1e9
         return_attn : bool
             whether to return attention weights
         attn_type : str
-            type of attention mask to generate if attn_mask is None
-            - 'causal' or 'independent'
+            type of attention mask to generate 
+            - 'independent' or 'causal'
 
         returns
         -------
         out : torch.tensor
-            output, shape `(batch, n_target_item, embed_dim)`
+            output, shape `(batch, seq_len, embed_dim)`
         attn : torch.tensor
-            attention weights (if return_attn), shape `(n_target_item, n_source_item)`
+            attention weights (if return_attn), shape `(seq_len, seq_len)`
         '''
 
-        batch_size, q_len, _ = q.shape
+        batch_size, q_len, _ = q.shape      # here, q_len = k_len = seq_len
         _, k_len, _ = k.shape
 
-        # check attention mask
-        if attn_mask is not None:
-            assert attn_mask.dtype == torch.bool
-            assert attn_mask.shape == (q_len, k_len) or attn_mask.shape == (batch_size, q_len, k_len)
-        else:
-            attn_mask = generate_attn_mask(q_len, type=attn_type)
+        attn_mask = generate_attn_mask(q_len, type=attn_type)   # (seq_len, seq_len)
 
-        # project q/k/v
-        q = self.q_project(q) # (batch, n_items, tf_dim)
-        k = self.k_project(k)
-        v =  self.v_project(v)
-
+        # project q / k / v
+        q = self.q_project(q)   # (batch, seq_len, tf_dim)
+        k = self.k_project(k)   # (batch, seq_len, tf_dim)
+        v =  self.v_project(v)  # (batch, seq_len, v_dim)
 
         # (batch, n_items, n_heads x dim_head) -> (batch, n_heads, n_items, dim_head)
-        q, k, v = map(lambda x: rearrange(x, 'b n (h d) -> b h n d', h=self.n_heads), (q,k,v))
+        # q, k, v = map(lambda x: rearrange(x, 'b n (h d) -> b h n d', h=self.n_heads), (q,k,v))
 
-        attn = torch.matmul(q, k.transpose(-1,-2)) * self.beta # (batch, n_heads, n_target_items, n_source_items)
-        if attn_mask is not None:
-            if attn_mask.dim()==3:
-                attn_mask = attn_mask.unsqueeze(1) # add an n_head dim for broadcast add
-            attn_mask = attn_mask.to(attn.device)
-            # mark -inf where mask==False
-            ninf_mask = torch.zeros_like(attn_mask, dtype=q.dtype, device=attn.device)
-            ninf_mask.masked_fill_(attn_mask==False, -1e9)#float('-inf'))
-            attn += ninf_mask
-        attn = F.softmax(attn, dim=-1)
+        attn = torch.matmul(q, k.transpose(-1,-2)) * self.beta # (batch, seq_len, seq_len)
 
-        out = torch.matmul(self.attn_dropout(attn), v) # (batch, n_heads, n_target_items, n_source_items) x (batch, n_heads, n_source_item, dim_head)
-        out = rearrange(out, 'b h n d -> b n (h d)') # (batch, n_target_items, n_heads x dim_head)
-        out = self.to_out(out)      # (batch, n_target_items, embed_dim)
+        # mask out attention weights for positions that are not allowed to attend
+        attn_mask = attn_mask.to(attn.device)
+        # mark -inf where mask==False
+        ninf_mask = torch.zeros_like(attn_mask, dtype=q.dtype, device=attn.device)
+        ninf_mask.masked_fill_(attn_mask==False, -1e9)  # float('-inf'))
+        attn += ninf_mask
+
+        # for each query vector, apply softmax over the dot products with all key vectors to get attention weights
+        attn = F.softmax(attn, dim=-1)  
+
+        out = torch.matmul(self.attn_dropout(attn), v)      # (batch, seq_len, seq_len) x (batch, seq_len, v_dim)
+        # out = rearrange(out, 'b h n d -> b n (h d)') # (batch, n_target_items, n_heads x dim_head)
+        # out = self.to_out(out)      # (batch, n_target_items, embed_dim)
         return (out, attn) if return_attn else out
-    
 
-
-
-# generate a fixedreadout where the ith row of the readout corresponds to class i
-def generate_fixed_readout(hidden_dim, output_dim, sigma=1.):
-    readout = nn.Parameter(torch.randn(output_dim, hidden_dim) * sigma, requires_grad=False)
-    return readout
-
-
-# 3-layer multi-layer perceptron (MLP) with relu activation in the hidden layer
-class MLP(nn.Module):
-
-    '''
-    3-layer MLP with relu activation in the hidden layer
-    '''
-
-    def __init__(self, in_dim, hidden_dim, out_dim, dropout=0., fixed_MLP_readout=False):
-        super().__init__()
-
-        self.layer1 = nn.Sequential(
-            nn.Linear(in_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout)
-        )
-
-        self.layer2 = nn.Linear(hidden_dim, out_dim, bias=False)
-        if fixed_MLP_readout:
-             self.layer2.weight = generate_fixed_readout(hidden_dim, out_dim, sigma=1.)
-
-        self.dropout = nn.Dropout(dropout)
-
-    def forward(self, x, is_val=False):
-        x = self.layer1(x)
-        out = self.dropout(self.layer2(x))
-        return out
-
-
-# single transformer layer, consisting of a multi-head attention layer and an MLP
-class TransformerLayer(nn.Module):
-
-    '''
-    single attention block, consisting of a self-attention layer and an MLP
-    '''
-
-    def __init__(self, embed_dim, tf_dim, n_heads, mlp_hid_dim, output_dim, dropout=0., fixed_MLP_readout=False):
-        super().__init__()
-        self.self_attn = Attention(embed_dim, tf_dim, n_heads, dropout)
-        self.norm1 = nn.LayerNorm(embed_dim)
-        self.mlp = MLP(tf_dim, mlp_hid_dim, output_dim, dropout, fixed_MLP_readout)
-
-    def forward(self, x, attn_mask=None, is_val=False):
-        '''
-        args
-        ----
-        x : tensor
-            shape (batch, max_len, embed_dim)
-        attn_mask : bool tensor
-            - (n_items, n_items) or (batch, n_items, n_items)
-            - mask for attention operation (e.g., causal future mask)
-            - True will be attended, False will be masked with -inf
-        '''
-        # original = x.clone()    # (batch, n_target_dims, embed_dim)
-        x = self.norm1(x + self.self_attn(x, x, x, attn_mask=attn_mask))
-        x = self.mlp(x, is_val)     # (batch, n_target_dims, output_dim)
-
-        return x
 
 
 # simplified transformer layer with just a self-attention layer and no MLP
@@ -244,9 +169,9 @@ class SimplifiedTransformerLayer(nn.Module):
     single attention block, consisting of a self-attention layer only
     '''
 
-    def __init__(self, embed_dim, tf_dim, n_heads, output_dim, W_V_init=None, beta=1.0):
+    def __init__(self, embed_dim, tf_dim, output_dim, W_V_init=None, beta=1.0):
         super().__init__()
-        self.self_attn = Attention(embed_dim, tf_dim, output_dim, n_heads, W_V_init=W_V_init, beta=beta)
+        self.self_attn = Attention(embed_dim, tf_dim, output_dim, W_V_init=W_V_init, beta=beta)
         self.beta = beta
 
     def forward(self, x, attn_type='independent'):
@@ -260,7 +185,7 @@ class SimplifiedTransformerLayer(nn.Module):
             - 'causal' or 'independent'
         '''
         # original = x.clone()    # (batch, n_target_dims, embed_dim)
-        x = self.self_attn(x, x, x, attn_mask=None, attn_type=attn_type)
+        x = self.self_attn(x, x, x, attn_type=attn_type)
 
         return x
 
@@ -290,18 +215,12 @@ def get_val_acc(val_outputs, val_labels):
     return acc
 
 
-# squared error loss function for transformer model
-def tf_mse_loss(model_outputs, target_labels):
-    batch_size = len(target_labels)
-    return torch.sum((model_outputs[:, -1, :] - target_labels)**2) # * (1./batch_size)
-
-
 # train a transformer model on the case sequence task in batch mode
 def train_tf_batchmode(model, full_seq_len, dataset_params, criterion,
                        regularizer=None, num_batches=5_000, batch_size=64, lr=5e-3,
                        toy_task_mode=False, reduced=False, freeze_K=False, freeze_Q=False, freeze_V=False, manual_grad_calc=False,
                        visualize_QKV_during=False, plot_mode=True, permutation_reduced=False, W_V_fixed=False,
-                       full_key_covar=True, plot_freq=100, device=torch.device('cpu')):
+                       full_key_covar=True, plot_freq=100, device=torch.device('cpu'), print_display=True):
     '''
     Key Arguments:
     model : nn.Module : transformer model to train
@@ -323,9 +242,10 @@ def train_tf_batchmode(model, full_seq_len, dataset_params, criterion,
     qk_submat : np.array : final learned W_Q^T W_K submatrix
     '''
 
-    # setup progress bar
-    pbar = trange(num_batches)
-    pbar.set_description("---")
+    if print_display:
+        # setup progress bar
+        pbar = trange(num_batches)
+        pbar.set_description("---")
 
     dataset_name = dataset_params[0]
     assert dataset_name == 'case_sequence'
@@ -334,6 +254,7 @@ def train_tf_batchmode(model, full_seq_len, dataset_params, criterion,
 
     batch_losses = []
     batch_accs = []
+    wv, ul_cov, qk_submat = None, None, None 
 
     for i in range(num_batches):
         # first, generate a batch of training sequences
@@ -392,16 +313,132 @@ def train_tf_batchmode(model, full_seq_len, dataset_params, criterion,
           W_K = model.self_attn.k_project.weight.data
           _ = visualize_uppercase_lowercase_covariance(num_letters, W_K, label='') #, KK_lims=[-2, 4, 1], full=full_key_covar)
 
-        pbar.set_description("Batch {:03} Train Loss {:.4f} Train Acc {:.4f}"\
-                            .format(i+1, batch_losses[-1], batch_accs[-1]))
+        if print_display:
+            pbar.set_description("Batch {:03} Train Loss {:.4f} Train Acc {:.4f}"\
+                                .format(i+1, batch_losses[-1], batch_accs[-1]))
 
-        pbar.update(1)
+            pbar.update(1)
 
         # visualize learned Q, K, V weights and covariance matrices at the end of training
-        if i == num_batches-1:
+        if (i == num_batches-1):
             wv, qk_submat = visualize_QKV_matrices(model, 'tf', label='', plot_mode=plot_mode, W_V_lims=[-0.2, 1.2, 0.2], QK_lims=[-2, 5, 1])
             W_K = model.self_attn.k_project.weight.data
             ul_cov = visualize_uppercase_lowercase_covariance(num_letters, W_K, label='', plot_mode=plot_mode, KK_lims=[-2, 4, 1], full=full_key_covar)
 
 
     return batch_losses, batch_accs, wv, ul_cov, qk_submat
+
+
+def compare_manual_vs_automatic_tf_training(model_params, full_seq_len, dataset_params, criterion,
+                                            num_batches=5_000, batch_size=64, lr=1e-3, toy_task_mode=False,
+                                            reduced=False, freeze_K=False, device=torch.device('cpu')):
+
+    (embed_dim, tf_dim, output_dim) = model_params
+
+    # create separate but identical copies, one to update automatically and one manually
+    auto_model = SimplifiedTransformerLayer(embed_dim, tf_dim, output_dim).to(device)
+
+    manual_model = SimplifiedTransformerLayer(embed_dim, tf_dim, output_dim).to(device)
+    manual_model.load_state_dict(auto_model.state_dict())
+
+    # setup progress bar
+    pbar = trange(num_batches)
+    pbar.set_description("---")
+
+    dataset_name, num_letters = dataset_params
+
+    # optimizer = optim.Adam(model.parameters(), lr=lr)
+
+    auto_batch_losses = []
+    auto_batch_accs = []
+    manual_batch_losses = []
+    manual_batch_accs = []
+
+    for i in range(num_batches):
+        if toy_task_mode:
+            inputs, targets = generate_toy_case_sequence_dataset(reduced=reduced)
+        else:
+            inputs, targets = generate_case_sequences(batch_size, full_seq_len-1, num_letters)
+
+        inputs = inputs.to(device)
+        targets = targets.to(device)
+
+        # automatic model update
+        output = auto_model(inputs)
+        auto_loss = criterion(output, targets)
+        auto_train_acc = get_val_acc(output, targets)
+
+        auto_WQ = auto_model.self_attn.q_project.weight.data
+        auto_WK = auto_model.self_attn.k_project.weight.data
+        auto_WV = auto_model.self_attn.v_project.weight.data
+
+        curr_auto_loss = auto_loss.item() / batch_size
+        auto_batch_losses.append(curr_auto_loss)
+        auto_batch_accs.append(auto_train_acc.item())
+
+        auto_model.self_attn.q_project.weight.grad = None
+        auto_model.self_attn.k_project.weight.grad = None
+        auto_model.self_attn.v_project.weight.grad = None
+        auto_loss.backward()
+
+        Q_grad, K_grad, V_grad = auto_model.self_attn.q_project.weight.grad, auto_model.self_attn.k_project.weight.grad, auto_model.self_attn.v_project.weight.grad
+
+        update_tf_weights(auto_model, Q_grad, K_grad, V_grad, lr, freeze_K=freeze_K)
+
+        # manual model update
+        output = manual_model(inputs)
+        manual_loss = criterion(output, targets)
+        manual_train_acc = get_val_acc(output, targets)
+
+        manual_batch_losses.append(manual_loss.item() / batch_size)
+        manual_batch_accs.append(manual_train_acc.item())
+
+        manual_WQ = manual_model.self_attn.q_project.weight.data
+        manual_WK = manual_model.self_attn.k_project.weight.data
+        manual_WV = manual_model.self_attn.v_project.weight.data
+
+        # compare losses, accs, and weights
+        assert np.isclose(curr_auto_loss, manual_loss.item() / batch_size, atol=1e-5), f"Losses differ at batch {i+1}: auto {curr_auto_loss}, manual {manual_loss.item() / batch_size}"
+        assert np.isclose(auto_train_acc.item(), manual_train_acc.item(), atol=1e-5), f"Accs differ at batch {i+1}: auto {auto_train_acc.item()}, manual {manual_train_acc.item()}"
+        assert torch.allclose(auto_WQ, manual_WQ, atol=1e-5), f"W_Q weights differ at batch {i+1}"
+        assert torch.allclose(auto_WK, manual_WK, atol=1e-5), f"W_K weights differ at batch {i+1}"
+        assert torch.allclose(auto_WV, manual_WV, atol=1e-5), f"W_V weights differ at batch {i+1}"
+
+        Q_grad, K_grad, V_grad = calculate_QKV_grads(batch_size, output[:, -1, :], targets, manual_WQ, manual_WK, manual_WV, inputs, beta=manual_model.beta, device=device)
+
+        update_tf_weights(manual_model, Q_grad, K_grad, V_grad, lr, freeze_K=freeze_K)
+
+        pbar.set_description("Batch {:03} Auto Train Loss {:.4f} Auto Train Acc {:.4f} Manual Train Loss {:.4f} Manual Train Acc {:.4f}"\
+                            .format(i+1, auto_loss.item(), auto_train_acc.item(), manual_loss.item(), manual_train_acc.item()))
+
+        pbar.update(1)
+
+    return auto_batch_losses, auto_batch_accs, manual_batch_losses, manual_batch_accs
+
+
+if __name__ == "__main__":
+    num_letters = 4
+    tf_dim = 32
+    C = 4
+    auto_losses, auto_accs, manual_losses, manual_accs = compare_manual_vs_automatic_tf_training((3*num_letters, tf_dim, 2), C+1, ['case_sequence', num_letters], mse_loss,
+                                                num_batches=5_000, batch_size=64, lr=1e-3, toy_task_mode=False,
+                                                reduced=False, freeze_K=False, device=torch.device('cpu'))
+
+    # plot
+    plt.figure(figsize=(8, 4))
+    plt.subplot(1, 2, 1)
+    plt.plot(auto_losses, label='automatic')
+    plt.plot(manual_losses, label='manual')
+    plt.title('Training Loss')
+    plt.xlabel('Batch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.subplot(1, 2, 2)
+    plt.plot(auto_accs, label='automatic')
+    plt.plot(manual_accs, label='manual')
+    plt.title('Training Accuracy')
+    plt.xlabel('Batch')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
