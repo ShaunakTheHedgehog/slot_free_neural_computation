@@ -14,10 +14,12 @@ from torch.utils.data import Dataset, DataLoader, TensorDataset
 
 
 # case type prediction dataset
-# first 'num_letters' tokens are uppercase, second 'num_letters' tokens are lowercase, third 'num_letters' tokens are for querying
+# first 'num_letters' tokens are lowercase, second 'num_letters' tokens are uppercase, third 'num_letters' tokens are for querying
 def generate_letter_config(num_letters):
     '''
-    returns: 
+    Arguments:
+        num_letters: number of letter types
+    Returns: 
         int_to_letters: shape (num_letters, 2, 3*num_letters), mapping integer letter index to one-hot encoding of upper/lower case letter
         int_to_query_token: shape (num_letters, 3*num_letters), mapping integer letter index to one-hot encoding of query token
     '''
@@ -31,49 +33,55 @@ def generate_letter_config(num_letters):
     return int_to_letters, int_to_query_token
 
 
-# generates case sequence dataset of shape (num_samples, seq_len + 1, 3*num_letters)
-def generate_case_sequences(num_samples, seq_len, num_letters):
+# generates case sequence dataset of shape (num_samples, context_window_len + 1, 3*num_letters)
+def generate_case_sequences(num_samples, context_window_len, num_letters):
     '''
     Generates a dataset of sequences of letters with varying cases, along with query tokens.
-    Each sequence consists of 'seq_len' letters (each letter can be either uppercase or lowercase),
+    Each sequence consists of 'context_window_len' letters (each letter can be either uppercase or lowercase),
     followed by a query token that asks for the case of one of the letters in the sequence
 
     Arguments:
     num_samples : int : number of sequences to generate
-    seq_len : int : length of each sequence (number of letters before the query token)
+    context_window_len : int : length of each sequence (number of letters before the query token)
     num_letters : int : number of distinct letters (e.g., if num_letters=3, letters are A, B, C)
 
     Returns:
-    inputs : torch.FloatTensor : shape (num_samples, seq_len + 1, 3*num_letters) : one-hot encoded input sequences with query tokens
-    targets : torch.FloatTensor : shape (num_samples, 2) : one-hot encoded target cases (0 for uppercase, 1 for lowercase)
+    inputs : torch.FloatTensor : shape (num_samples, context_window_len + 1, 3*num_letters) : one-hot encoded input sequences with query tokens
+    targets : torch.FloatTensor : shape (num_samples, 2) : one-hot encoded target cases (0 for lowercase, 1 for uppercase)
     '''
-    assert seq_len <= num_letters
+    assert context_window_len <= num_letters
 
+    # get maps from letter index (in alphabet) to one-hot encodings
     int_to_letters, int_to_query_token = generate_letter_config(num_letters)
 
-    one_hot_seqs = torch.zeros(num_samples, seq_len, 3*num_letters)
+    one_hot_seqs = torch.zeros(num_samples, context_window_len, 3*num_letters)
     queries = torch.zeros((num_samples, 3*num_letters))
     targets = torch.zeros(num_samples)
 
-    letter_inds = torch.stack([torch.randperm(num_letters)[:seq_len] for _ in range(num_samples)])
-    case_inds = torch.randint(0, 2, size=(num_samples, seq_len))
+    # generate letter indices and case types across 'num_samples' context sequences
+    letter_inds = torch.stack([torch.randperm(num_letters)[:context_window_len] for _ in range(num_samples)])
+    case_inds = torch.randint(0, 2, size=(num_samples, context_window_len))
 
+    # get one-hot encoding of each letter in context window
     for i in range(num_samples):
-        for j in range(seq_len):
+        for j in range(context_window_len):
             one_hot_seqs[i, j] = int_to_letters[letter_inds[i, j], case_inds[i, j]]
 
-    query_positions = torch.randint(0, seq_len, size=(num_samples,))
+    # select a letter type to be queried at the end of each context window
+    query_positions = torch.randint(0, context_window_len, size=(num_samples,))
 
+    # get query letter's case, as it appears in the sequence
     targets = torch.gather(case_inds, 1, query_positions.view(-1, 1))
     targets = targets.reshape(-1)
     targets = F.one_hot(targets, num_classes=2)
 
+    # get one-hot encoding for each query vector
     query_inds = torch.gather(letter_inds, 1, query_positions.view(-1, 1))
-
     for k in range(num_samples):
         queries[k] = int_to_query_token[query_inds[k]]
     queries = queries.unsqueeze(1)
 
+    # inputs = context items + query item; target = case of query item
     inputs = torch.cat((one_hot_seqs, queries), 1)
     targets = targets.type(torch.FloatTensor)
 
