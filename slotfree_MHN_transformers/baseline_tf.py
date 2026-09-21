@@ -48,7 +48,7 @@ def generate_attn_mask(seq_len, type='causal'):
 class Attention(nn.Module):
 
     '''
-    Multi-head attention mechanism.
+    Single-head self-attention mechanism.
     '''
 
     def __init__(self, embed_dim, tf_dim, v_dim, dropout=0., W_V_init=None, beta=1.0):
@@ -58,7 +58,7 @@ class Attention(nn.Module):
         embed_dim : int,
             the input dim for each item in sequence
         tf_dim : int
-            the total dim of the transformer 
+            the total dim of the transformer, which in this case is just the key/query vector dim
         v_dim : int
             the dim of the value vectors (output vectors)
         dropout : float
@@ -329,6 +329,7 @@ def train_tf_batchmode(model, full_seq_len, dataset_params, criterion,
     return batch_losses, batch_accs, wv, ul_cov, qk_submat
 
 
+# verify that manually calculated gradients match up with automatic gradients (from PyTorch)
 def compare_manual_vs_automatic_tf_training(model_params, full_seq_len, dataset_params, criterion,
                                             num_batches=5_000, batch_size=64, lr=1e-3, toy_task_mode=False,
                                             reduced=False, freeze_K=False, device=torch.device('cpu')):
@@ -417,11 +418,11 @@ def compare_manual_vs_automatic_tf_training(model_params, full_seq_len, dataset_
 
 
 if __name__ == "__main__":
-    num_letters = 4
-    tf_dim = 32
-    C = 4
+    num_letters = 26
+    tf_dim = 64
+    C = 26
     auto_losses, auto_accs, manual_losses, manual_accs = compare_manual_vs_automatic_tf_training((3*num_letters, tf_dim, 2), C+1, ['case_sequence', num_letters], mse_loss,
-                                                num_batches=5_000, batch_size=64, lr=1e-3, toy_task_mode=False,
+                                                num_batches=5_000, batch_size=64, lr=1e-2, toy_task_mode=False,
                                                 reduced=False, freeze_K=False, device=torch.device('cpu'))
 
     # plot
