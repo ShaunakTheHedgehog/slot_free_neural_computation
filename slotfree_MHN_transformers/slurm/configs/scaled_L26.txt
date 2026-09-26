@@ -1,0 +1,9 @@
+# Experiment 2 (scaled_L26): scaled-up run with L = C = 26 (full_seq_len = 27).
+# Only the item_in_mhn MHN models (one hidden neuron per context item, tf_dim = 26 = C)
+# plus the baseline tf. Matched footing: k_dim = 64 (key/query dim) and lr = 1e-2 for all.
+# K_lr is left at its default (= lr = 1e-2) everywhere, so no --K_lr here.
+# One array task per line.  Longer than L=4 (26 recruitment steps/batch); allow a few hours.
+--model tf            --L 26 --k_dim 64               --lr 1e-2 --num_batches 5000 --batch_size 64 --ntrials 10 --experiment scaled_L26
+--model fixed_WK_item --L 26 --k_dim 64 --tf_dim 26   --lr 1e-2 --num_batches 5000 --batch_size 64 --ntrials 10 --experiment scaled_L26
+--model MHN_WK_item   --L 26 --k_dim 64 --tf_dim 26   --lr 1e-2 --num_batches 5000 --batch_size 64 --ntrials 10 --experiment scaled_L26
+--model QK_item       --L 26 --k_dim 64 --tf_dim 26   --lr 1e-2 --num_batches 5000 --batch_size 64 --ntrials 10 --experiment scaled_L26

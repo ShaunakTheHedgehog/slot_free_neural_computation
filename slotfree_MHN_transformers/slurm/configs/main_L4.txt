@@ -1,0 +1,16 @@
+# Experiment 1 (main_L4): all 10 model classes on the case sequence task, L = C = 4.
+# Matched footing: every model uses k_dim = 32 (key/query dim) and lr = 1e-3.
+# tf_dim = 8 (= 2L) for the noproj/proj MHN models; tf_dim = 4 (= C) for item_in_mhn;
+# the baseline tf has no MHN hidden layer. Only the QK models get a distinct K_lr (1e-4);
+# MHN_WK trains W_K at the shared lr, fixed_WK does not train W_K at all.
+# One array task per line.  ~10-20 min per line on one core.
+--model tf              --L 4 --k_dim 32              --lr 1e-3             --num_batches 5000 --batch_size 64 --ntrials 10 --experiment main_L4
+--model fixed_WK_noproj --L 4 --k_dim 32 --tf_dim 8   --lr 1e-3             --num_batches 5000 --batch_size 64 --ntrials 10 --experiment main_L4
+--model fixed_WK_proj   --L 4 --k_dim 32 --tf_dim 8   --lr 1e-3             --num_batches 5000 --batch_size 64 --ntrials 10 --experiment main_L4
+--model fixed_WK_item   --L 4 --k_dim 32 --tf_dim 4   --lr 1e-3             --num_batches 5000 --batch_size 64 --ntrials 10 --experiment main_L4
+--model MHN_WK_noproj   --L 4 --k_dim 32 --tf_dim 8   --lr 1e-3             --num_batches 5000 --batch_size 64 --ntrials 10 --experiment main_L4
+--model MHN_WK_proj     --L 4 --k_dim 32 --tf_dim 8   --lr 1e-3             --num_batches 5000 --batch_size 64 --ntrials 10 --experiment main_L4
+--model MHN_WK_item     --L 4 --k_dim 32 --tf_dim 4   --lr 1e-3             --num_batches 5000 --batch_size 64 --ntrials 10 --experiment main_L4
+--model QK_noproj       --L 4 --k_dim 32 --tf_dim 8   --lr 1e-3 --K_lr 1e-4 --num_batches 5000 --batch_size 64 --ntrials 10 --experiment main_L4
+--model QK_proj         --L 4 --k_dim 32 --tf_dim 8   --lr 1e-3 --K_lr 1e-4 --num_batches 5000 --batch_size 64 --ntrials 10 --experiment main_L4
+--model QK_item         --L 4 --k_dim 32 --tf_dim 4   --lr 1e-3 --K_lr 1e-4 --num_batches 5000 --batch_size 64 --ntrials 10 --experiment main_L4
