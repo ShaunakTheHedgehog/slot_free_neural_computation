@@ -27,7 +27,7 @@ from baseline_tf import SimplifiedTransformerLayer, train_tf_batchmode
 # class implementing a 1-winner MHN built to operate in parallel over a batch of inputs
 class OneWinnerMHN(nn.Module):
     def __init__(self, batch_size, input_size, hidden_size, output_size, one_hot_input_size,
-                 input_sparsity=None, softmax_beta=1., debug_mode=False, input_proj_strength=1.0, item_in_mhn=False):
+                 softmax_beta=1., debug_mode=False, input_proj_strength=1.0, item_in_mhn=False):
         super().__init__()
         '''
         Arguments:
@@ -37,11 +37,11 @@ class OneWinnerMHN(nn.Module):
         hidden_size: MHN hidden size
         output_size: size of label (output) vector
         one_hot_input_size: size of one-hot encoded input vector (e.g. 3*num_letters for case sequence task)
-        input_sparsity: fraction from 0 to 1 giving desired sparsity level of inputs (as 1s and 0s)
         softmax_beta: softmax inverse temperature parameter, used during the query step
         debug_mode: if True, sets up W_items to directly pass through input one-hot vectors to MHN hidden layer, 
                     enabling a new MHN hidden neuron to be recruited for each context item
         input_proj_strength: strength of identity projection from input to MHN hidden layer, if debug_mode is True
+        item_in_mhn: if True, use one-hot item vectors to directly assign MHN hidden neurons without interference
         '''
         num_letters = int(one_hot_input_size / 3.)
         num_context_tokens = 2 * num_letters
@@ -85,25 +85,15 @@ class OneWinnerMHN(nn.Module):
         self.W_hi = W_hi
         self.W_oh = W_oh
 
-
         W_reinst = torch.zeros(batch_size, hidden_size, one_hot_input_size)
         W_reinst = W_reinst.uniform_()
         self.W_reinst = W_reinst
-        # self.W_reinst = self.W_reinst.to(device)
 
-        self.input_sparsity = input_sparsity
 
     # updating MHN weights at a fixed timestep of processing (across a whole batch)
     # doing a one-winner-take-all weight update
     def __adjust_weights(self, z, x_curr, curr_context):
         # z is of shape batch_size x hidden_size
-        # x_curr_item = x_curr[:, :self.item_dim]       # batch_size x item_dim
-        # x_curr_label = x_curr[:, self.item_dim:]      # batch_size x label_dim
-        # new_W_hi = self.W_hi.data + (torch.bmm(z.unsqueeze(-1), x_curr_item.unsqueeze(-2)) - self.W_hi.data * z.unsqueeze(-1))
-        # new_W_oh = self.W_oh.data + (torch.bmm(x_curr_label.unsqueeze(-1), z.unsqueeze(-2)) - self.W_oh.data * z.unsqueeze(-2))
-
-        # self.W_hi.data = new_W_hi
-        # self.W_oh.data = new_W_oh
 
         winners = z.argmax(dim=1)                     # (batch_size,)
         batch_idx = torch.arange(z.shape[0], device=z.device)
@@ -117,7 +107,10 @@ class OneWinnerMHN(nn.Module):
 
     # loading 1-winner MHN buffer weights over each timestep in the context window
     def __context_forward_step(self, x_curr, curr_context):
-        # x_curr has shape batch_size x (input_size + output_size) (taken at current timestep in sequence, before query)
+        # x_curr has shape batch_size x input_size (taken at current timestep in sequence, before query)
+        # note: input_size = item_dim + label_dim
+
+        # first, recruit a neuron in the hidden layer of the MHN
         if self.debug_mode and self.item_in_mhn:
             hidden_logits = torch.bmm(self.W_items.data, curr_context.unsqueeze(-1))
         elif self.debug_mode and not self.item_in_mhn:
@@ -127,21 +120,13 @@ class OneWinnerMHN(nn.Module):
     
         z = sparsify_tensor(hidden_logits, 1, dim=1)   # use 1-winner-take-all; shape is batch_size x hidden_size x 1
 
-        # winners = z.squeeze(-1).argmax(dim=1)
-        # batch_idx = torch.arange(z.shape[0], device=z.device)
-        # self.W_reinst[batch_idx, winners, :] = curr_context     # batch_size x one_hot_input_size
-
-        # self.W_reinst = self.W_reinst + (torch.bmm(z, curr_context.unsqueeze(-2)) - self.W_reinst * z)
-
+        # apply fast weight updates
         self.__adjust_weights(z.squeeze(-1), x_curr, curr_context)
 
     # forward pass for query item
     def __query_forward_step(self, x_q):
-        # x_curr has shape batch_size x (input_size + output_size) (taken at current timestep in sequence, before query)
-
+        # propagate query through MHN to produce an output as well as a reinstated context item
         hidden_logits = torch.bmm(self.W_hi.data, x_q.unsqueeze(-1))  # batch_size x hidden_size x 1
-
-        # z = sparsify_tensor(hidden_logits, 1, dim=1)   # use 1-winner-take-all; shape is batch_size x hidden_size x 1
         hidden_activations = F.softmax(self.beta * hidden_logits.squeeze(-1), dim=1)
 
         out = torch.bmm(self.W_oh.data, hidden_activations.unsqueeze(-1))
@@ -157,8 +142,8 @@ class OneWinnerMHN(nn.Module):
     # batched online learning phase
     def forward(self, x_c, x_q, context_input):
         '''
-        x_c            : embedded keys + values for items in context (batch_size x (seq_len - 1) x (input_size + output_size))
-        x_q            : embedded representation for query item (batch_size x input_size)
+        x_c            : embedded keys + values for items in context (batch_size x (seq_len - 1) x (item_dim + label_dim))
+        x_q            : embedded representation for query item (batch_size x item_dim)
         context_input  : one-hot vector representations of items in context (batch_size x (seq_len - 1) x one_hot_input_size)
         '''
         assert self.hidden_size >= x_c.shape[1], "MHN hidden_size must be >= number of items in context window"
@@ -189,8 +174,8 @@ class OneWinnerMHN(nn.Module):
 # MHN-based Transformer layer with 1-winner MHN as attention mechanism
 class OneWinnerMHNLayer(nn.Module):
 
-    def __init__(self, batch_size, input_dim, k_dim, v_dim, tf_dim, output_dim=None,
-                 softmax_beta=1.0, project_out=False, debug_mode=False, item_in_mhn=False,
+    def __init__(self, batch_size, input_dim, k_dim, v_dim, tf_dim,
+                 softmax_beta=1.0, debug_mode=False, item_in_mhn=False,
                  init_coeff=1.0, input_proj_strength=1.0, device=torch.device('cpu')):
         '''
         args
@@ -205,8 +190,6 @@ class OneWinnerMHNLayer(nn.Module):
             the output dim of the MHN
         tf_dim : int,
             the number of MHN hidden neurons
-        output_dim : int or None,
-            the output dimension of the model (if None, no output projection is done)
         softmax_beta : float,
             the inverse temperature parameter for the softmax function
         project_out : bool,
@@ -214,8 +197,8 @@ class OneWinnerMHNLayer(nn.Module):
         debug_mode : bool,
             whether to enable "debug mode" in the MHN, where W_items is set to directly project 
             input one-hot vectors to MHN hidden layer
-        item_in_mhn : bool,
-            whether to include the input item in the MHN
+        item_in_mhn: bool
+            if True, use one-hot item vectors to directly assign MHN hidden neurons without interference
         init_coeff : float,
             the initialization coefficient for the MHN weights
         input_proj_strength : float,
@@ -266,11 +249,6 @@ class OneWinnerMHNLayer(nn.Module):
 
         self.one_win_mhn = None
 
-        self.W_project_out = nn.Linear(v_dim, output_dim, bias=False) if project_out else nn.Identity(v_dim)
-        if project_out:
-            assert output_dim is not None
-
-        self.output_dim = output_dim
 
     # full forward pass
     def forward(self, x):
@@ -284,7 +262,7 @@ class OneWinnerMHNLayer(nn.Module):
 
         # initialize new 1-winner MHN for loading up this batch of context items
         buffer_mhn = OneWinnerMHN(self.batch_size, self.item_dim + self.label_dim, self.tf_dim, self.v_dim, one_hot_input_size=self.input_dim,
-                                  input_sparsity=None, softmax_beta=self.beta, debug_mode=self.debug_mode, input_proj_strength=self.input_proj_strength, item_in_mhn=self.item_in_mhn)
+                                  softmax_beta=self.beta, debug_mode=self.debug_mode, input_proj_strength=self.input_proj_strength, item_in_mhn=self.item_in_mhn)
 
         self.one_win_mhn = buffer_mhn.to(self.device)
         self.one_win_mhn.W_reinst = self.one_win_mhn.W_reinst.to(self.device)
@@ -292,9 +270,7 @@ class OneWinnerMHNLayer(nn.Module):
         # perform loading and query-based retrieval from the MHN
         mhn_out, reinst_context = self.one_win_mhn(x_context, x_Q, context_input)
 
-        out = self.W_project_out(mhn_out)
-
-        return out, reinst_context, x_Q
+        return mhn_out, reinst_context, x_Q
 
     # full forward pass for reinstantiated context input
     def reinst_context_forward(self, reinst_context):
@@ -308,12 +284,9 @@ class OneWinnerMHNLayer(nn.Module):
         self.one_win_mhn.W_oh.data = self.one_win_mhn.W_oh.data.detach().requires_grad_(True)
 
         x_K = self.W_K(reinst_context)     # batch_size x k_dim
-        x_V = self.W_V(reinst_context)     # batch_size x v_dim
+        x_V_out = self.W_V(reinst_context)     # batch_size x v_dim
 
         out = self.one_win_mhn.reinst_context_forward(x_K)     # batch_size x v_dim
-
-        out = self.W_project_out(out)
-        x_V_out = self.W_project_out(x_V)
 
         return out, x_V_out
 
@@ -338,17 +311,22 @@ def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
     num_batches : int : number of training batches
     batch_size : int : number of sequences per batch
     lr : float : learning rate for gradient descent
+    freeze_K/freeze_Q/freeze_V : bool : freeze respective weights throughout training
+    manual_grad_calc: bool : whether to perform gradient descent using manually calculated gradients (as opposed to automatic gradients)
+    visualize_QKV_during: bool : whether to show intermediate plots of model's learned weight structure
+    K_lr : learning rate for W_K (default is None, in which case lr is used throughout)
     K_grad_type : str : type of W_K gradient to use ('through_MHN', 'supervised', 'none')
     WV_train_mode : str : whether to train W_V 'via_reinstatement' or 'via_MHN_output'
 
     Returns:
-    Q_losses : list : list of Q losses across each training batch
-    K_losses : list : list of K losses across each training batch
-    V_losses : list : list of V losses across each training batch
-    accs : list : list of accuracies at each training batch
+    batch_losses : list : list of losses at each training batch
+    batch_accs : list : list of accuracies at each training batch
     wv : np.array : learned W_V weights at end of training
     ul_cov : np.array : learned uppercase-lowercase covariance matrix at end of training
     qk_submat : np.array : learned query-key covariance submatrix at end of training
+    Q_losses : list : list of Q losses across each training batch
+    K_losses : list : list of K losses across each training batch
+    V_losses : list : list of V losses across each training batch
     '''
 
     if print_display:
@@ -370,9 +348,6 @@ def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
 
     batch_accs = []
     batch_losses = []
-
-    auto_batch_accs = []
-    auto_batch_losses = []
 
     wv, ul_cov, qk_submat = None, None, None 
 
@@ -418,8 +393,6 @@ def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
 
         if not freeze_Q:
             # W_Q update
-
-            # Q_loss = criterion(Q_output, targets)
             Q_loss = criterion(x_V_out, targets)
             Q_losses.append(Q_loss.item() / batch_size)
 
@@ -488,15 +461,9 @@ def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
           _, _ = visualize_QKV_matrices(model, 'mhn_tf', label=f'(Iter {i})', W_V_lims=[0., 1., 0.2], QK_lims=[-2., 8., 2])
           _ = visualize_uppercase_lowercase_covariance(num_letters, model.W_K.weight.data, '', KK_lims=[-2., 8., 2], full=full_key_covar)
 
-        curr_loss = None
-        if len(Q_losses) == 0:
-            curr_loss = V_losses[-1]
-        else:
-            curr_loss = Q_losses[-1]
-
         if print_display:
-            pbar.set_description("Batch {:03} Train (Q) Loss {:.4f} Train Acc {:.4f}"\
-                                .format(i+1, curr_loss, batch_accs[-1]))
+            pbar.set_description("Batch {:03} Train Loss {:.4f} Train Acc {:.4f}"\
+                                .format(i+1, batch_losses[-1], batch_accs[-1]))
 
             pbar.update(1)
         
@@ -644,16 +611,17 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
     num_batches : int : number of training batches
     batch_size : int : number of context sequences per batch
     lr : float : learning rate for gradient descent 
-    K_grad_type : str : type of W_K gradient to use ('through_MHN' (through MHN), 'supervised', or 'none')
+    K_lr : learning rate for W_K (default is None, in which case lr is used throughout)
+    K_grad_type : str : type of W_K gradient to use ('through_MHN', 'supervised', or 'none')
+    final_window : int : the number of final time steps over which to average the ending batch accuracy and ending batch loss
+    manual_grad_calc: bool : whether to perform gradient descent using manually calculated gradients (as opposed to automatic gradients)
     WV_train_mode : str : whether to train W_V 'via_reinstatement' or 'via_MHN_output'
+    item_in_mhn : bool : if True, directly assigns MHN hidden neurons based on the one-hot item, thereby preventing interference/overwriting
+    input_proj_strength : float : strength of input projection weights (default: 1.0)
     beta : float : inverse temperature multiplying the attention logits (baseline and MHN models alike)
 
     Returns:
-    results_dict : dict : dictionary containing mean and all accuracies and losses, as well as weight and covariance stats
-    all_accs : np.array : array of shape (ntrials, num_batches) containing accuracies for all trials and batches
-    all_losses : np.array : array of shape (ntrials, num_batches) containing losses for all trials and batches
-    covar_stats_dict : dict : dictionary containing mean covariance statistics
-    mean_covar_stats_dict : dict : dictionary containing multi-trial-averaged mean covariance statistics
+    full_results_dict : dict : dictionary containing mean and all accuracies and losses, as well as weight and covariance stats
     '''
 
     assert model_type in ['tf', 'mhn_tf_fixed_WK', 'mhn_tf']
@@ -666,6 +634,8 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
     input_dim = 3 * num_letters
     output_dim = 2
     dataset_params = ['case_sequence', num_letters]
+
+    freeze_K = True if model_type == 'mhn_tf_fixed_WK' else False
 
     mean_accs = np.zeros(ntrials)
     mean_losses = np.zeros(ntrials)
@@ -690,6 +660,10 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
     ul_offdiags_mean = np.zeros(ntrials)
     ul_offdiags_range = np.zeros(ntrials)
 
+    wvs = []
+    ul_covs = []
+    qk_covs = []
+
     for i in range(ntrials):
         batch_losses, batch_accs, wv, ul_cov, qk_cov = None, None, None, None, None
         if model_type == 'tf':
@@ -702,28 +676,43 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
                                                                               num_batches=num_batches, batch_size=batch_size, lr=lr,
                                                                               manual_grad_calc=manual_grad_calc, plot_mode=False, device=device)
 
-        elif model_type == 'mhn_tf_fixed_WK':
-            assert tf_dim is not None
-            assert K_grad_type == 'none'
-            mhn_tf = OneWinnerMHNLayer(batch_size, input_dim, k_dim, output_dim, tf_dim, input_proj_strength=input_proj_strength, softmax_beta=beta,
-                                       debug_mode=debug_mode, item_in_mhn=item_in_mhn, device=device).to(device)
-
-            batch_losses, batch_accs, wv, ul_cov, qk_cov = train_mhn_tf_model_batchmode_fixedK(mhn_tf, full_seq_len, dataset_params, criterion=criterion,
-                                                                                               num_batches=num_batches, batch_size=batch_size, lr=lr,
-                                                                                               manual_grad_calc=manual_grad_calc, plot_mode=False, device=device,
-                                                                                               WV_train_mode=WV_train_mode)
         else:
-            assert model_type == 'mhn_tf'
-            assert tf_dim is not None
-            assert K_grad_type in ['through_MHN', 'supervised']
+            assert tf_dim is not None 
+            assert (model_type == 'mhn_tf_fixed_WK' and K_grad_type == 'none' and K_lr is None) or (model_type == 'mhn_tf' and K_grad_type in ['through_MHN', 'supervised'])
+
             mhn_tf = OneWinnerMHNLayer(batch_size, input_dim, k_dim, output_dim, tf_dim, input_proj_strength=input_proj_strength, softmax_beta=beta,
-                                       debug_mode=debug_mode, item_in_mhn=item_in_mhn, device=device).to(device)
+                                                   debug_mode=debug_mode, item_in_mhn=item_in_mhn, device=device).to(device)
+            
+            batch_losses, batch_accs, wv, ul_cov, qk_cov, *_ = train_mhn_tf_model_batchmode(mhn_tf, full_seq_len, dataset_params, criterion=criterion, num_batches=num_batches,
+                                                                                            batch_size=batch_size, lr=lr, freeze_K=freeze_K, manual_grad_calc=manual_grad_calc, K_lr=K_lr, 
+                                                                                            K_grad_type=K_grad_type, plot_mode=False, device=device, WV_train_mode=WV_train_mode)
+            
 
-            batch_losses, batch_accs, wv, ul_cov, qk_cov, _, _, _ = train_mhn_tf_model_batchmode(mhn_tf, full_seq_len, dataset_params, criterion=criterion, num_batches=num_batches,
-                                                                                              batch_size=batch_size, lr=lr, manual_grad_calc=manual_grad_calc, K_lr=K_lr, K_grad_type=K_grad_type,
-                                                                                              plot_mode=False, device=device, WV_train_mode=WV_train_mode)
+        # elif model_type == 'mhn_tf_fixed_WK':
+        #     assert tf_dim is not None
+        #     assert K_grad_type == 'none'
+        #     assert K_lr is None
+        #     mhn_tf = OneWinnerMHNLayer(batch_size, input_dim, k_dim, output_dim, tf_dim, input_proj_strength=input_proj_strength, softmax_beta=beta,
+        #                                debug_mode=debug_mode, item_in_mhn=item_in_mhn, device=device).to(device)
 
+        #     batch_losses, batch_accs, wv, ul_cov, qk_cov = train_mhn_tf_model_batchmode_fixedK(mhn_tf, full_seq_len, dataset_params, criterion=criterion,
+        #                                                                                        num_batches=num_batches, batch_size=batch_size, lr=lr,
+        #                                                                                        manual_grad_calc=manual_grad_calc, plot_mode=False, device=device,
+        #                                                                                        WV_train_mode=WV_train_mode)
+        # else:
+        #     assert model_type == 'mhn_tf'
+        #     assert tf_dim is not None
+        #     assert K_grad_type in ['through_MHN', 'supervised']
+        #     mhn_tf = OneWinnerMHNLayer(batch_size, input_dim, k_dim, output_dim, tf_dim, input_proj_strength=input_proj_strength, softmax_beta=beta,
+        #                                debug_mode=debug_mode, item_in_mhn=item_in_mhn, device=device).to(device)
 
+        #     batch_losses, batch_accs, wv, ul_cov, qk_cov, *_ = train_mhn_tf_model_batchmode(mhn_tf, full_seq_len, dataset_params, criterion=criterion, num_batches=num_batches,
+        #                                                                                       batch_size=batch_size, lr=lr, manual_grad_calc=manual_grad_calc, K_lr=K_lr, K_grad_type=K_grad_type,
+        #                                                                                       plot_mode=False, device=device, WV_train_mode=WV_train_mode)
+
+        wvs.append(wv)
+        ul_covs.append(ul_cov)
+        qk_covs.append(qk_cov)
 
         batch_accs = np.array(batch_accs)
         batch_losses = np.array(batch_losses)
@@ -755,8 +744,10 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
                    'mean_W_V_diffs': mean_W_V_diffs, 'mean_ul_covar_diffs': mean_ul_covar_diffs,
                    'mean_QK_l_covar_diffs': mean_QK_l_covar_diffs, 'mean_QK_u_covar_diffs': mean_QK_u_covar_diffs}
 
+    matrices_dict = {'wv': wvs, 'ul_cov': ul_covs, 'qk_cov': qk_covs}
+
     # concatenate all three dictionaries into one for saving
-    full_results_dict = {**results_dict, **covar_stats_dict, **mean_covar_stats_dict, 'losses': all_losses, 'accs': all_accs}
+    full_results_dict = {**results_dict, **covar_stats_dict, **mean_covar_stats_dict, **matrices_dict, 'losses': all_losses, 'accs': all_accs}
 
     # save as pkl file to directory
     with open(f'{save_dir}full_results_{model_type}_ntrials{ntrials}_L{num_letters}_C{full_seq_len-1}_kdim{k_dim}_tfdim{tf_dim}_debugmode{debug_mode}_Kgrad_{K_grad_type}_iteminmhn_{item_in_mhn}.pkl', 'wb') as f:
@@ -911,17 +902,17 @@ def compare_manual_vs_auto(model_params, full_seq_len, dataset_params, criterion
 
 if __name__ == "__main__":
     B = 64
-    L = 4
-    C = 4
-    lr = 1e-3
+    L = 26
+    C = 26
+    lr = 1e-2
     K_lr = None
-    model_params = (B, 3*L, 32, 2, 8)  # batch_size, input_dim, k_dim, v_dim, tf_dim
+    model_params = (B, 3*L, 64, 2, 26)  # batch_size, input_dim, k_dim, v_dim, tf_dim
     dataset_params = ['case_sequence', L]
     criterion = mse_loss 
-    K_grad_type = 'none'
-    freeze_K = True
-    add_proj = False
-    item_in_mhn = False
+    K_grad_type = 'supervised'
+    freeze_K = False
+    add_proj = True
+    item_in_mhn = True
 
     auto_losses, auto_accs, manual_losses, manual_accs = compare_manual_vs_auto(model_params, C+1, dataset_params, criterion,
                                     num_batches=5_000, batch_size=B, lr=lr, 
