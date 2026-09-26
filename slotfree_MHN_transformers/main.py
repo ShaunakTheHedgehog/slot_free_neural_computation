@@ -88,6 +88,8 @@ def parse_args():
     p.add_argument('--threads', type=int, default=int(os.environ.get('SLURM_CPUS_PER_TASK', 1)),
                    help='torch CPU threads (default: SLURM_CPUS_PER_TASK, else 1)')
     p.add_argument('--overwrite', action='store_true', help='rerun even if results already exist')
+    p.add_argument('--no_plots', action='store_true',
+                   help='skip saving the first-trial diagnostic plots (accuracy, loss, W_V, QK, key covariance)')
     p.add_argument('--dry_run', action='store_true', help='validate arguments and print the run directory only')
     p.add_argument('--demo', action='store_true', help='run the interactive single-model demo instead')
 
@@ -155,6 +157,42 @@ def git_commit():
         return 'unknown'
 
 
+def save_first_trial_plots(batch_accs, batch_losses, wv, ul_cov, qk, args, out_dir):
+    '''Save the first trial's diagnostics (accuracy, loss, W_V, W_Q^T W_K submatrix,
+    and key covariance) as PNGs, so a run can be eyeballed against expectations --
+    the same quantities plotted in demo(). Wired as the sweep's first_trial_callback,
+    so the plots appear as soon as the first trial finishes.'''
+    plot_dir = os.path.join(out_dir, 'plots_trial0')
+    os.makedirs(plot_dir, exist_ok=True)
+
+    accs   = np.asarray(batch_accs)      # (num_batches,)  training accuracy curve
+    losses = np.asarray(batch_losses)    # (num_batches,)  training loss curve
+    wv     = np.asarray(wv)               # (2, 3L)          final W_V
+    ul_cov = np.asarray(ul_cov)          # (2L, 2L)         final key covariance
+    qk     = np.asarray(qk)              # (L, 2L)          final W_Q^T W_K submatrix
+    both, abstract = get_x_labels(3 * args.L, 'both_cases'), get_x_labels(3 * args.L, 'abstract')
+
+    def _line(y, ylabel, name, ylim):
+        fig = plt.figure()
+        plt.plot(y); plt.xlabel('Batch'); plt.ylabel(ylabel); plt.ylim(*ylim)
+        plt.title(f'{args.model} (trial 0): {ylabel}')
+        fig.savefig(os.path.join(plot_dir, name), bbox_inches='tight'); plt.close(fig)
+
+    def _heatmap(mat, title, name, xlabels, ylabels, figsize):
+        fig = plt.figure(figsize=figsize)
+        plt.imshow(mat, cmap='viridis'); plt.title(title); plt.colorbar(orientation='horizontal')
+        plt.xticks(np.arange(mat.shape[1]), xlabels, fontsize=8, rotation=90)
+        plt.yticks(np.arange(mat.shape[0]), ylabels, fontsize=8)
+        fig.savefig(os.path.join(plot_dir, name), bbox_inches='tight'); plt.close(fig)
+
+    _line(accs, 'Training Accuracy', 'accuracy.png', (0., 1.05))
+    _line(losses, 'Loss', 'loss.png', (0., None))
+    _heatmap(wv, 'Entries of $W_V$', 'wv.png', get_x_labels(3 * args.L, 'all'), cases, (8, 4))
+    _heatmap(qk, 'Entries of $W_Q^T W_K$', 'qk_cov.png', both, abstract, (10, 5))
+    _heatmap(ul_cov, 'Key Covariance', 'ul_cov.png', both, both, (9, 9))
+    print(f'saved trial-0 diagnostic plots to {plot_dir}', flush=True)
+
+
 def run_sweep(args):
     spec = MODELS[args.model]
     run_dir = os.path.join(args.results_root, args.experiment, args.model, run_name(args))
@@ -173,7 +211,7 @@ def run_sweep(args):
     np.random.seed(args.seed)
     random.seed(args.seed)
 
-    config = {k: v for k, v in vars(args).items() if k not in ['dry_run', 'demo', 'overwrite']}
+    config = {k: v for k, v in vars(args).items() if k not in ['dry_run', 'demo', 'overwrite', 'no_plots']}
     config.update(spec)
     config.update(git_commit=git_commit(), host=platform.node(), torch_version=torch.__version__,
                   slurm_job_id=os.environ.get('SLURM_JOB_ID'),
@@ -188,10 +226,15 @@ def run_sweep(args):
     write_config(status='running')
     t0 = time.time()
 
+    # save the first trial's diagnostic plots as soon as that trial finishes (quick feedback)
+    plot_cb = None if args.no_plots else (
+        lambda accs, losses, wv, ul_cov, qk: save_first_trial_plots(accs, losses, wv, ul_cov, qk, args, run_dir))
+
     sweep_kwargs = dict(K_lr=args.K_lr, K_grad_type=spec['K_grad_type'], final_window=args.final_window,
                         device=torch.device('cpu'), manual_grad_calc=True, save_dir=run_dir,
                         WV_train_mode=args.WV_train_mode, item_in_mhn=spec['item_in_mhn'],
-                        input_proj_strength=args.input_proj_strength, beta=args.beta)
+                        input_proj_strength=args.input_proj_strength, beta=args.beta,
+                        first_trial_callback=plot_cb)
 
     print(f'Running {spec['model_type']} model over {args.ntrials} trials, with L = {args.L}, C = {args.C}', flush=True)
     print(f'Params: key/query dim = {args.k_dim}, MHN hidden dim = {args.tf_dim}, input projs = {spec['debug_mode']}', flush=True)

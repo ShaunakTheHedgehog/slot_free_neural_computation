@@ -594,7 +594,7 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
                                   K_lr=None, K_grad_type='through_MHN', final_window=1_000,
                                   device=torch.device('cpu'), manual_grad_calc=True, save_dir='',
                                   WV_train_mode='via_reinstatement', item_in_mhn=False, input_proj_strength=1.0,
-                                  beta=1.0):
+                                  beta=1.0, first_trial_callback=None):
 
     '''
     Runs a sweep over multiple trials of an MHN-based Transformer model on the case sequence task.
@@ -619,6 +619,9 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
     item_in_mhn : bool : if True, directly assigns MHN hidden neurons based on the one-hot item, thereby preventing interference/overwriting
     input_proj_strength : float : strength of input projection weights (default: 1.0)
     beta : float : inverse temperature multiplying the attention logits (baseline and MHN models alike)
+    first_trial_callback : callable or None : if given, called as
+        first_trial_callback(batch_accs, batch_losses, wv, ul_cov, qk_cov) right after the
+        first trial finishes (e.g. to save diagnostic plots for quick feedback)
 
     Returns:
     full_results_dict : dict : dictionary containing mean and all accuracies and losses, as well as weight and covariance stats
@@ -722,6 +725,11 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
 
         all_accs[i] = batch_accs
         all_losses[i] = batch_losses
+
+        # hand the first trial's curves + learned matrices to an optional callback
+        # (e.g. to save diagnostic plots) as soon as that trial finishes
+        if i == 0 and first_trial_callback is not None:
+            first_trial_callback(batch_accs, batch_losses, wv, ul_cov, qk_cov)
 
         mean_W_V_diffs[i] = get_W_V_stats(num_letters, wv)
         ul_diags_mean[i], ul_diags_range[i], ul_offdiags_mean[i], ul_offdiags_range[i] = get_upper_lower_covar_stats(num_letters, ul_cov[num_letters:, :num_letters])
