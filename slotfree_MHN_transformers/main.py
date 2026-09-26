@@ -193,9 +193,9 @@ def run_sweep(args):
                         WV_train_mode=args.WV_train_mode, item_in_mhn=spec['item_in_mhn'],
                         input_proj_strength=args.input_proj_strength, beta=args.beta)
 
-    print(f'Running {spec['model_type']} model over {args.ntrials} trials, with L = {args.C}, C = {args.C}', flush=True)
+    print(f'Running {spec['model_type']} model over {args.ntrials} trials, with L = {args.L}, C = {args.C}', flush=True)
     print(f'Params: key/query dim = {args.k_dim}, MHN hidden dim = {args.tf_dim}, input projs = {spec['debug_mode']}', flush=True)
-    print(f'num batches = {args.num_batches}, batch sie = {args.batch_size}, lr = {args.lr}, K_lr = {args.K_lr},', flush=True)
+    print(f'num batches = {args.num_batches}, batch size = {args.batch_size}, lr = {args.lr}, K_lr = {args.K_lr},', flush=True)
     print(f'WK grad type = {spec['K_grad_type']}, item in mhn = {spec['item_in_mhn']}, i.p. strength = {args.input_proj_strength}, beta = {args.beta}', flush=True)
     print(f'Final window length = {args.final_window}', flush=True)
 

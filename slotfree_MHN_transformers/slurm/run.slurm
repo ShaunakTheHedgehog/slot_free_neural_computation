@@ -25,6 +25,8 @@
 set -eo pipefail
 CONFIG=$1
 
+cd "$SLURM_SUBMIT_DIR"
+
 # this task's arguments: line number SLURM_ARRAY_TASK_ID, ignoring comments and blank lines
 read -ra ARGS <<< "$(grep -vE '^\s*(#|$)' "$CONFIG" | sed -n "${SLURM_ARRAY_TASK_ID}p")"
 
@@ -35,6 +37,5 @@ eval "$(conda shell.bash hook)" && conda activate slotfree-mhn-tf
 # headless plotting, no progress-bar spam in the logs, one thread per CPU
 export MPLBACKEND=Agg TQDM_DISABLE=1 OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
-cd "$SLURM_SUBMIT_DIR"
 echo "[task $SLURM_ARRAY_TASK_ID] $(hostname)  python main.py ${ARGS[*]}"
 python main.py "${ARGS[@]}"
