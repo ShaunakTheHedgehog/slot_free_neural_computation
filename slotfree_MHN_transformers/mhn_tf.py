@@ -753,12 +753,12 @@ def run_case_sequence_model_sweep(ntrials, model_type, num_letters, full_seq_len
     with open(f'{save_dir}full_results_{model_type}_ntrials{ntrials}_L{num_letters}_C{full_seq_len-1}_kdim{k_dim}_tfdim{tf_dim}_debugmode{debug_mode}_Kgrad_{K_grad_type}_iteminmhn_{item_in_mhn}.pkl', 'wb') as f:
         pkl.dump(full_results_dict, f)
 
-    print(f'Results Dictionary: {results_dict}')
-    print(f'\nCovariance Matrices Stats: {covar_stats_dict}')
-    print(f'\nMean Covariance Matrices Stats: {mean_covar_stats_dict}')
+    print(f'Results Dictionary: {results_dict}', flush=True)
+    print(f'\nCovariance Matrices Stats: {covar_stats_dict}', flush=True)
+    print(f'\nMean Covariance Matrices Stats: {mean_covar_stats_dict}', flush=True)
 
-    print(f'\nMedian Accuracy: {np.median(all_accs, 0)}')
-    print(f'\nMedian Loss: {np.median(all_losses, 0)}')
+    print(f'\nMedian Accuracy: {np.median(all_accs, 0)}', flush=True)
+    print(f'\nMedian Loss: {np.median(all_losses, 0)}', flush=True)
 
     return full_results_dict
 
