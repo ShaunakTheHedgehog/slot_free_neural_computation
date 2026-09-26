@@ -193,6 +193,12 @@ def run_sweep(args):
                         WV_train_mode=args.WV_train_mode, item_in_mhn=spec['item_in_mhn'],
                         input_proj_strength=args.input_proj_strength, beta=args.beta)
 
+    print(f'Running {spec['model_type']} model over {args.ntrials} trials, with L = {args.C}, C = {args.C}', flush=True)
+    print(f'Params: key/query dim = {args.k_dim}, MHN hidden dim = {args.tf_dim}, input projs = {spec['debug_mode']}', flush=True)
+    print(f'num batches = {args.num_batches}, batch sie = {args.batch_size}, lr = {args.lr}, K_lr = {args.K_lr},', flush=True)
+    print(f'WK grad type = {spec['K_grad_type']}, item in mhn = {spec['item_in_mhn']}, i.p. strength = {args.input_proj_strength}, beta = {args.beta}', flush=True)
+    print(f'Final window length = {args.final_window}', flush=True)
+
     results = run_case_sequence_model_sweep(args.ntrials, spec['model_type'], args.L, args.C + 1,
                                             args.k_dim, args.tf_dim, spec['debug_mode'], mse_loss,
                                             args.num_batches, args.batch_size, args.lr, **sweep_kwargs)
@@ -208,19 +214,20 @@ def demo():
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(device)
 
-    num_letters = 8
-    full_seq_len = 9
-    k_dim = 64
-    tf_dim = 16
+    num_letters = 4
+    full_seq_len = 5
+    k_dim = 32
+    tf_dim = 8
     input_proj_strength = 1.0
     debug_mode = True
     item_in_mhn = False
     criterion = mse_loss
-    num_batches = 300
+    num_batches = 3_000
     batch_size = 64
-    lr = 5e-3
+    lr = 1e-3
     K_lr = None
-    K_grad_type = 'supervised'
+    freeze_K = True
+    K_grad_type = 'none'
     WV_train_mode = 'via_reinstatement'
     input_dim = 3 * num_letters
     output_dim = 2
@@ -231,22 +238,22 @@ def demo():
     np.random.seed(seed)
     random.seed(seed)
 
-    model = SimplifiedTransformerLayer(input_dim, k_dim, output_dim).to(device)
-    batch_losses, batch_accs, wv, ul_cov, qk_submat = train_tf_batchmode(model, full_seq_len, dataset_params, criterion,
-                       regularizer=None, num_batches=num_batches, batch_size=batch_size, lr=lr,
-                       toy_task_mode=False, reduced=False, freeze_K=False, freeze_Q=False, freeze_V=False, manual_grad_calc=False,
-                       visualize_QKV_during=False, plot_mode=True, permutation_reduced=False, W_V_fixed=False,
-                       full_key_covar=True, plot_freq=300, device=torch.device('cpu'))
+    # model = SimplifiedTransformerLayer(input_dim, k_dim, output_dim).to(device)
+    # batch_losses, batch_accs, wv, ul_cov, qk_submat = train_tf_batchmode(model, full_seq_len, dataset_params, criterion,
+    #                    regularizer=None, num_batches=num_batches, batch_size=batch_size, lr=lr,
+    #                    toy_task_mode=False, reduced=False, freeze_K=False, freeze_Q=False, freeze_V=False, manual_grad_calc=False,
+    #                    visualize_QKV_during=False, plot_mode=True, permutation_reduced=False, W_V_fixed=False,
+    #                    full_key_covar=True, plot_freq=300, device=torch.device('cpu'))
 
     # code for training and evaluating a single MHN-transformer model (in batch mode)
-    # model = OneWinnerMHNLayer(batch_size, input_dim, k_dim, output_dim, tf_dim, input_proj_strength=input_proj_strength,
-    #                           debug_mode=debug_mode, item_in_mhn=item_in_mhn, device=device).to(device)
+    model = OneWinnerMHNLayer(batch_size, input_dim, k_dim, output_dim, tf_dim, input_proj_strength=input_proj_strength,
+                              debug_mode=debug_mode, item_in_mhn=item_in_mhn, device=device).to(device)
 
-    # batch_losses, batch_accs, wv, ul_cov, qk_submat, _, _, _ = train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
-    #                              num_batches=num_batches, batch_size=batch_size, lr=lr,
-    #                              freeze_K=False, freeze_Q=False, freeze_V=False,
-    #                              manual_grad_calc=False, plot_mode=True, full_key_covar=True,
-    #                              device=device, K_grad_type=K_grad_type, WV_train_mode=WV_train_mode, K_lr=K_lr, print_display=True)
+    batch_losses, batch_accs, wv, ul_cov, qk_submat, _, _, _ = train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
+                                 num_batches=num_batches, batch_size=batch_size, lr=lr,
+                                 freeze_K=freeze_K, freeze_Q=False, freeze_V=False,
+                                 manual_grad_calc=False, plot_mode=True, full_key_covar=True,
+                                 device=device, K_grad_type=K_grad_type, WV_train_mode=WV_train_mode, K_lr=K_lr, print_display=True)
 
     print('done!')
 
@@ -266,7 +273,7 @@ def demo():
     plt.show()
 
     # visualize learned Q, K, V weights and covariance matrices ('tf' since demo() trains the baseline)
-    _, _ = visualize_QKV_matrices(model, 'tf', label='Final Learned Weights', plot_mode=True) #, W_V_lims=[-0.2, 1.2, 0.2], QK_lims=[-2, 5, 1])
+    _, _ = visualize_QKV_matrices(model, 'mhn_tf', label='Final Learned Weights', plot_mode=True) #, W_V_lims=[-0.2, 1.2, 0.2], QK_lims=[-2, 5, 1])
 
 
 def main():
