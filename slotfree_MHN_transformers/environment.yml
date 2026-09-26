@@ -18,4 +18,7 @@ dependencies:
   - pytorch
   - einops
   - tqdm
+  - pandas       # figure_generation.py
+  - seaborn      # figure_generation.py
+  - scipy        # figure_generation.py (covariance stats t-tests)
   # pickle, functools, math, random, itertools, copy, warnings are part of the Python standard library
