@@ -17,6 +17,10 @@
 #SBATCH --mem=2G
 #SBATCH --time=12:00:00               # enough for L=26; override with --time for smaller runs
 #SBATCH --output=slurm/logs/%x_%A_%a.out
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --mail-type=BEGIN,END,FAIL                 # Email notifications
+#SBATCH --mail-user=sb0108@princeton.edu
 
 set -eo pipefail
 CONFIG=$1
