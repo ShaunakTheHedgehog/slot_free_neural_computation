@@ -31,7 +31,7 @@ cd "$SLURM_SUBMIT_DIR"
 read -ra ARGS <<< "$(grep -vE '^\s*(#|$)' "$CONFIG" | sed -n "${SLURM_ARRAY_TASK_ID}p")"
 
 # activate the environment -- adapt these two lines to your cluster
-module load anaconda3                 # or: source ~/miniconda3/etc/profile.d/conda.sh
+module load anaconda3/2025.6                 # or: source ~/miniconda3/etc/profile.d/conda.sh
 eval "$(conda shell.bash hook)" && conda activate slotfree-mhn-tf
 
 # headless plotting, no progress-bar spam in the logs, one thread per CPU
