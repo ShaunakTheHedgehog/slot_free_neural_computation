@@ -265,17 +265,17 @@ def demo():
     debug_mode = True
     item_in_mhn = False
     criterion = mse_loss
-    num_batches = 3_000
+    num_batches = 5_000
     batch_size = 64
     lr = 1e-3
-    K_lr = None
-    freeze_K = True
-    K_grad_type = 'none'
+    K_lr = 1e-4
+    freeze_K = False
+    K_grad_type = 'supervised'
     WV_train_mode = 'via_reinstatement'
     input_dim = 3 * num_letters
     output_dim = 2
     dataset_params = ['case_sequence', num_letters]
-    seed = 0
+    seed = 13
 
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -284,7 +284,7 @@ def demo():
     # model = SimplifiedTransformerLayer(input_dim, k_dim, output_dim).to(device)
     # batch_losses, batch_accs, wv, ul_cov, qk_submat = train_tf_batchmode(model, full_seq_len, dataset_params, criterion,
     #                    regularizer=None, num_batches=num_batches, batch_size=batch_size, lr=lr,
-    #                    toy_task_mode=False, reduced=False, freeze_K=False, freeze_Q=False, freeze_V=False, manual_grad_calc=False,
+    #                    toy_task_mode=False, reduced=False, freeze_K=False, freeze_Q=False, freeze_V=False, manual_grad_calc=True,
     #                    visualize_QKV_during=False, plot_mode=True, permutation_reduced=False, W_V_fixed=False,
     #                    full_key_covar=True, plot_freq=300, device=torch.device('cpu'))
 
@@ -295,17 +295,19 @@ def demo():
     batch_losses, batch_accs, wv, ul_cov, qk_submat, _, _, _ = train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
                                  num_batches=num_batches, batch_size=batch_size, lr=lr,
                                  freeze_K=freeze_K, freeze_Q=False, freeze_V=False,
-                                 manual_grad_calc=False, plot_mode=True, full_key_covar=True,
+                                 manual_grad_calc=True, plot_mode=True, full_key_covar=True,
                                  device=device, K_grad_type=K_grad_type, WV_train_mode=WV_train_mode, K_lr=K_lr, print_display=True)
 
     print('done!')
 
     plt.figure()
-    plt.plot(batch_accs)
-    plt.xlabel('Batch')
-    plt.ylabel('Training Accuracy')
-    plt.title('Training Accuracy across Batches')
-    plt.show()
+    plt.plot(batch_accs, color='dodgerblue', lw=2.5)
+    plt.xlabel('Iteration', fontsize=16)
+    plt.ylabel('Accuracy', fontsize=16)
+    plt.yticks(np.arange(0, 1.01, 0.2))
+    plt.tick_params(axis='both', which='major', labelsize=14)
+    plt.title('Batch Accuracy across Gradient Steps', fontsize=18)
+    plt.savefig('QK_MHN_tf_training_accuracy.pdf', bbox_inches='tight')
 
     plt.figure(figsize=(10, 5))
     plt.plot(batch_losses)
@@ -316,8 +318,9 @@ def demo():
     plt.show()
 
     # visualize learned Q, K, V weights and covariance matrices ('tf' since demo() trains the baseline)
-    _, _ = visualize_QKV_matrices(model, 'mhn_tf', label='Final Learned Weights', plot_mode=True) #, W_V_lims=[-0.2, 1.2, 0.2], QK_lims=[-2, 5, 1])
-
+    _, _ = visualize_QKV_matrices(model, 'mhn_tf', label='QK_MHN_tf', plot_mode=True, download=True) #, W_V_lims=[-0.2, 1.2, 0.2], QK_lims=[-2, 5, 1])
+    W_K = model.W_K.weight.data
+    ul_cov = visualize_uppercase_lowercase_covariance(num_letters, W_K, label='QK_MHN_tf', plot_mode=True, full=True, download=True) #, KK_lims=[-2, 4, 1])
 
 def main():
     args = parse_args()

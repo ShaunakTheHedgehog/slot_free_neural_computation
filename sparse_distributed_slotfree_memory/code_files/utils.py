@@ -242,6 +242,24 @@ def bit_flipped(x, num_flips):
   return similar_pattern
 
 
+# Probabilistic counterpart of bit_flipped: each 1-bit of x is flipped to 0 independently
+# with probability 'flip_prob'. If b' 1-bits end up flipped, exactly b' of x's 0-bits
+# (chosen uniformly at random, without replacement) are flipped to 1, so the number of
+# active bits is preserved. The input x is not modified.
+def prob_bit_flipped(x, flip_prob):
+  if not 0. <= flip_prob <= 1.:
+    raise ValueError(f'flip_prob must be in [0, 1], got {flip_prob}')
+  similar_pattern = np.copy(x)
+  ones_indices = np.where(x == 1)[0]
+  zero_indices = np.where(x == 0)[0]
+  ones_flip_indices = ones_indices[np.random.rand(len(ones_indices)) < flip_prob]
+  num_flips = len(ones_flip_indices)
+  zeros_flip_indices = random.sample(list(zero_indices), num_flips)
+  similar_pattern[ones_flip_indices] = 0
+  similar_pattern[zeros_flip_indices] = 1
+  return similar_pattern
+
+
 # permute the patterns in a dataset of shape num_patterns x input_size
 def shuffle_data(data):
   shuffle_inds = np.arange(data.shape[0])

@@ -148,15 +148,15 @@ def visualize_QKV_matrices(model, model_type, label='', download=False, plot_mod
     W_V = W_V.detach().cpu().numpy()
 
     if plot_mode:
-        plt.figure()
-        plt.title('$W_Q$ ' + label)
-        plt.imshow(W_Q)
-        plt.colorbar()
+        # plt.figure()
+        # plt.title('$W_Q$ ' + label)
+        # plt.imshow(W_Q)
+        # plt.colorbar()
 
-        plt.figure()
-        plt.title('$W_K$ ' + label)
-        plt.imshow(W_K)
-        plt.colorbar()
+        # plt.figure()
+        # plt.title('$W_K$ ' + label)
+        # plt.imshow(W_K)
+        # plt.colorbar()
 
         plt.figure(figsize=(8, 6))
         plt.title('Entries of $W_V$', fontsize=20)
@@ -284,6 +284,8 @@ def visualize_uppercase_lowercase_covariance(num_letters, W_K, label='', downloa
 
         if download:
             plt.savefig(label + '_upperlower_covariance.pdf', bbox_inches='tight')
+        else:
+            plt.show()
 
     return covar
 

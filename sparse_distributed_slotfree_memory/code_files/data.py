@@ -1,6 +1,6 @@
 import numpy as np
 import random
-from utils import bit_flipped, shuffle_data
+from utils import bit_flipped, prob_bit_flipped, shuffle_data
 from globals import NUM_BURN_IN, NUM_EVAL, TOT_NUM_PATTERNS
 
 '''
@@ -39,11 +39,19 @@ num_active                  :     number of 1-bits in each pattern (i.e. the spa
 prototypes                  :     optional array of pre-generated prototypes (shape num_categories x length).
                                   If None (default), the prototypes are drawn iid as described above. Supplying
                                   prototypes allows multiple datasets to share the same underlying categories.
+shuffle                     :     whether to shuffle the ordering of the generated patterns (default: True)
+flip_mode                   :     'fixed' (default): exactly 'num_flips' 1-bits flip to 0 and 'num_flips' 0-bits flip to 1.
+                                  'prob': each 1-bit flips to 0 independently with probability num_flips / num_active;
+                                  if b' 1-bits flip, exactly b' 0-bits (chosen uniformly at random) flip to 1, so the
+                                  sparsity is preserved and the expected number of flips equals 'num_flips'.
 
 Returns:
 data        :     a shuffled 2D array of binary patterns (with shape (num_categories * num_examples_per_category) x length)
 '''
-def generate_clustered_data(num_categories, num_examples_per_category, num_flips, length, num_active, prototypes=None, shuffle=True):
+def generate_clustered_data(num_categories, num_examples_per_category, num_flips, length, num_active, prototypes=None, shuffle=True,
+                            flip_mode='fixed'):
+    if flip_mode not in ('fixed', 'prob'):
+        raise ValueError(f'invalid flip_mode: {flip_mode}')
     if prototypes is None:
         # draw the iid random binary prototype/parent patterns
         prototypes = generate_data(num_categories, length, num_active)
@@ -53,7 +61,12 @@ def generate_clustered_data(num_categories, num_examples_per_category, num_flips
     for c in range(num_categories):
         for _ in range(num_examples_per_category):
             # each descendant is a randomly bit-flipped version of its parent prototype
-            data[idx] = bit_flipped(prototypes[c], num_flips)
+            if flip_mode == 'fixed':
+                # exactly num_flips 1->0 and num_flips 0->1 flips
+                data[idx] = bit_flipped(prototypes[c], num_flips)
+            else:
+                # each 1-bit flips with probability num_flips / num_active; an equal number of 0-bits flip to 1
+                data[idx] = prob_bit_flipped(prototypes[c], num_flips / num_active)
             idx += 1
 
     # shuffle the ordering of all the generated patterns
@@ -102,6 +115,8 @@ length          :     total length of each binary pattern
 num_active      :     number of 1-bits in each pattern (i.e. the sparsity level)
 num_flips       :     number of bit flips used to derive a descendant from its category prototype
 num_categories  :     number of categories (prototypes) underlying the data (default: 10)
+flip_mode       :     'fixed' (default) or 'prob'; how descendants are bit-flipped from their prototype
+                      (see generate_clustered_data). Applied to the burn-in, training and pseudo patterns alike.
 
 Returns:
 burn_in_data    :     NUM_TRAIN burn-in patterns (shape NUM_TRAIN x length)
@@ -109,20 +124,20 @@ train_data      :     NUM_TEST most-recent training patterns (shape NUM_TEST x l
 pseudo_data     :     NUM_TEST untrained pseudo-patterns (shape NUM_TEST x length)
 '''
 def generate_correlated_dataset(length, num_active, num_flips, num_categories=10, num_burn_in=NUM_BURN_IN, num_eval=NUM_EVAL,
-                                pseudo_from_same_categories=True, order_match=False):
+                                pseudo_from_same_categories=True, order_match=False, flip_mode='fixed'):
     if order_match:
        assert pseudo_from_same_categories, "order_match requires pseudo_from_same_categories=True"
     
     # the burn-in and recent training patterns are drawn from the SAME set of categories
     train_prototypes = generate_data(num_categories, length, num_active)
     burn_in_data = generate_clustered_data(num_categories, num_burn_in // num_categories, num_flips,
-                                           length, num_active, prototypes=train_prototypes)
+                                           length, num_active, prototypes=train_prototypes, flip_mode=flip_mode)
     
     if order_match:
       train_data = generate_clustered_data(num_categories, num_eval // num_categories, num_flips,
-                                            length, num_active, prototypes=train_prototypes, shuffle=False)
+                                            length, num_active, prototypes=train_prototypes, shuffle=False, flip_mode=flip_mode)
       pseudo_data = generate_clustered_data(num_categories, num_eval // num_categories, num_flips,
-                                             length, num_active, prototypes=train_prototypes, shuffle=False)
+                                             length, num_active, prototypes=train_prototypes, shuffle=False, flip_mode=flip_mode)
       ordering = np.arange(train_data.shape[0])
       np.random.shuffle(ordering)
        
@@ -132,7 +147,7 @@ def generate_correlated_dataset(length, num_active, num_flips, num_categories=10
     
 
     train_data = generate_clustered_data(num_categories, num_eval // num_categories, num_flips,
-                                         length, num_active, prototypes=train_prototypes)
+                                         length, num_active, prototypes=train_prototypes, flip_mode=flip_mode)
 
     if pseudo_from_same_categories:
         pseudo_prototypes = train_prototypes
@@ -140,7 +155,7 @@ def generate_correlated_dataset(length, num_active, num_flips, num_categories=10
         pseudo_prototypes = generate_data(num_categories, length, num_active)
 
     pseudo_data = generate_clustered_data(num_categories, num_eval // num_categories, num_flips,
-                                          length, num_active, prototypes=pseudo_prototypes)
+                                          length, num_active, prototypes=pseudo_prototypes, flip_mode=flip_mode)
 
     return burn_in_data, train_data, pseudo_data
 
@@ -182,13 +197,18 @@ def generate_tree_dataset(length, num_active, num_flips, num_burn_in=NUM_BURN_IN
 
 
 def generate_specific_dataset(length, num_active, data_type='random', num_flips=None, num_categories=10, num_burn_in=NUM_BURN_IN, num_eval=NUM_EVAL,
-                              pseudo_from_same_categories=True, order_match=False):
+                              pseudo_from_same_categories=True, order_match=False, flip_mode='fixed'):
+    # probabilistic bit flips are only implemented for the correlated (clustered) data
+    if data_type != 'correlated':
+        if flip_mode != 'fixed':
+            raise ValueError(f"flip_mode='{flip_mode}' is only supported for correlated data")
     if data_type == 'random':
         return generate_random_dataset(length, num_active, num_burn_in=num_burn_in, num_eval=num_eval)
     elif data_type == 'correlated':
         assert num_flips is not None
         return generate_correlated_dataset(length, num_active, num_flips, num_categories=num_categories, num_burn_in=num_burn_in, num_eval=num_eval, 
-                                           pseudo_from_same_categories=pseudo_from_same_categories, order_match=order_match)
+                                           pseudo_from_same_categories=pseudo_from_same_categories, order_match=order_match,
+                                           flip_mode=flip_mode)
     elif data_type == 'tree':
         assert num_flips is not None
         return generate_tree_dataset(length, num_active, num_flips, num_burn_in=num_burn_in, num_eval=num_eval)

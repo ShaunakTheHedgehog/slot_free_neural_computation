@@ -103,7 +103,8 @@ unif_overlaps       :       the same for uniform, unstructured pseudo-patterns (
 '''
 def simulate_trials(runset, num_trials, num_mems, cue_level, in_steady_state=True, num_burn_in=NUM_BURN_IN,
                     data_type='random', num_flips=None, num_categories=10,
-                    uniform_baseline=False, nonlinearity_type='hard_k', use_pseudo_from_same_categories=True, order_match=False):
+                    uniform_baseline=False, nonlinearity_type='hard_k', use_pseudo_from_same_categories=True, order_match=False,
+                    flip_mode='fixed'):
     assert nonlinearity_type in ['hard_k', 'random']
     data_clustered = (data_type != 'random')
     (n_i, n_h, s, f, k, epsilon) = runset
@@ -121,7 +122,8 @@ def simulate_trials(runset, num_trials, num_mems, cue_level, in_steady_state=Tru
         # generate dataset of patterns, whether structured or random
         steady_state_data, data, pseudodata = generate_specific_dataset(length, num_active, data_type, num_flips, num_categories,
                                                                         num_burn_in=num_burn_in, num_eval=num_mems,
-                                                                        pseudo_from_same_categories=use_pseudo_from_same_categories, order_match=order_match)
+                                                                        pseudo_from_same_categories=use_pseudo_from_same_categories, order_match=order_match,
+                                                                        flip_mode=flip_mode)
 
         if data_clustered and uniform_baseline is True:
             unif_pseudodata = generate_data(num_mems, n_i, s)
@@ -284,7 +286,7 @@ def build_raw_filename(runset1, runset2, meta):
         (n_i, n_h, s, f, k, eps) = rs
         return f'{n_i}x{n_h}s{s}k{k}f{f}e{eps}'
     m = meta
-    return (f"raw_{m['data_type']}"
+    name = (f"raw_{m['data_type']}"
             f"_kwin{_rs(runset1)}_mhn{_rs(runset2)}"
             f"_cue{m['cue_level']}_mems{m['num_mems']}_burn{m['num_burn_in']}"
             f"_samp{m['num_samples']}_runs{m['num_runs_per_sample']}"
@@ -292,6 +294,10 @@ def build_raw_filename(runset1, runset2, meta):
             f"_om{int(m['order_match'])}_ub{int(m['uniform_baseline'])}"
             f"_ps{int(m['pseudo_from_same_categories'])}_nl{m['nonlinearity_type']}"
             f"_seed{m['seed']}")
+    # tag only non-default flip modes, so fixed-flip filenames are unchanged
+    if m.get('flip_mode', 'fixed') != 'fixed':
+        name += f"_fm{m['flip_mode']}"
+    return name
 
 
 '''
@@ -310,7 +316,8 @@ Returns a dictionary holding the raw overlaps for both models along with the ful
 def run_raw_collection(runset1, runset2, num_mems, num_samples, num_runs_per_sample, cue_level,
                        num_burn_in=NUM_BURN_IN, data_type='random', num_flips=None, num_categories=10,
                        uniform_baseline=False, nonlinearity_type='hard_k', use_pseudo_from_same_categories=True,
-                       order_match=False, seed=None, save_data=True, filename=None, results_dir='retrieval_data'):
+                       order_match=False, seed=None, save_data=True, filename=None, results_dir='retrieval_data',
+                       flip_mode='fixed'):
     # the AUC histograms are binned over 0...s, so both models must share the same pattern sparsity
     if runset2 is not None:
         assert runset1[2] == runset2[2], 'both runsets must use the same number of active bits (s)'
@@ -330,7 +337,7 @@ def run_raw_collection(runset1, runset2, num_mems, num_samples, num_runs_per_sam
     sim_kwargs = dict(in_steady_state=True, num_burn_in=num_burn_in, data_type=data_type, num_flips=num_flips,
                       num_categories=num_categories, uniform_baseline=uniform_baseline,
                       nonlinearity_type=nonlinearity_type, use_pseudo_from_same_categories=use_pseudo_from_same_categories,
-                      order_match=order_match)
+                      order_match=order_match, flip_mode=flip_mode)
 
     for i in range(num_samples):
         real, pseudo, unif = simulate_trials(runset1, num_runs_per_sample, num_mems, cue_level, **sim_kwargs)
@@ -354,7 +361,7 @@ def run_raw_collection(runset1, runset2, num_mems, num_samples, num_runs_per_sam
                    'data_type': data_type, 'num_flips': num_flips, 'num_categories': num_categories,
                    'order_match': order_match, 'uniform_baseline': uniform_baseline,
                    'pseudo_from_same_categories': use_pseudo_from_same_categories,
-                   'nonlinearity_type': nonlinearity_type, 'seed': seed}
+                   'nonlinearity_type': nonlinearity_type, 'seed': seed, 'flip_mode': flip_mode}
 
     if save_data:
         if filename is None:
@@ -872,6 +879,8 @@ def run_analysis():
                     help='hidden-layer rule (note: only affects the retrieval analysis)')
     ap.add_argument('--order_match', choices=['True', 'False'], default='False',
                     help='whether to match the order of real and pseudo patterns in the retrieval analysis')
+    ap.add_argument('--flip_mode', choices=['fixed', 'prob'], default='fixed',
+                    help="[raw, correlated data] 'fixed': exactly num_flips flips; 'prob': each 1-bit flips with prob num_flips/num_active")
     ap.add_argument('--filename', type=str, default=None,
                     help='output filename (without .pkl); a descriptive default is used if omitted')
     ap.add_argument('--seed', type=int, default=None,
@@ -892,12 +901,21 @@ def run_analysis():
     two_runsets = args.runset2 is not None
     save_data = True
 
+    if args.data_type != 'random':
+        assert args.num_flips is not None, "num_flips must be specified for correlated/tree data"
+    if args.flip_mode != 'fixed' and args.data_type != 'correlated':
+        ap.error('--flip_mode prob is only supported for --data_type correlated')
+    if args.flip_mode != 'fixed' and args.analysis != 'raw':
+        ap.error('--flip_mode prob is only supported for --analysis raw')
+    # bit flips are taken from the num_active (= s) 1-bits, so 0 <= num_flips <= s
+    s = args.runset1[2]
+    if args.data_type == 'correlated' and not 0 <= args.num_flips <= s:
+        ap.error(f'--num_flips must be in [0, s={s}] for correlated data, got {args.num_flips}')
+
     print(f'Running {args.analysis} analysis with data type {args.data_type} and cue level {args.cue_level}...', flush=True)
 
     if args.data_type == 'correlated':
         assert args.num_mems % args.num_categories == 0, "num_mems must be divisible by num_categories for correlated data"
-    if args.data_type != 'random':
-        assert args.num_flips is not None, "num_flips must be specified for correlated/tree data"
 
     if args.analysis == 'raw':
         return run_raw_collection(
@@ -906,7 +924,7 @@ def run_analysis():
             num_categories=args.num_categories, uniform_baseline=args.uniform_baseline,
             nonlinearity_type=args.nonlinearity_type, order_match=order_match,
             seed=args.seed, save_data=save_data, filename=args.filename, results_dir=args.results_dir, 
-            use_pseudo_from_same_categories=use_pseudo_from_same_categs)
+            use_pseudo_from_same_categories=use_pseudo_from_same_categs, flip_mode=args.flip_mode)
 
     if args.analysis == 'retrieval':
         filename = args.filename or f'retrieval_{args.data_type}_cue{args.cue_level}_nummems{args.num_mems}_flips{args.num_flips}'
