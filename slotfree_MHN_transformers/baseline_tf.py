@@ -89,9 +89,12 @@ class Attention(nn.Module):
 
         # initialize Q, K, V weights
         with torch.no_grad():
-            W_Q = torch.randn(tf_dim, embed_dim, requires_grad=True) * (1./tf_dim**0.5)
-            W_K = torch.randn(tf_dim, embed_dim, requires_grad=True) * (1./tf_dim**0.5)
-            W_V = torch.rand(v_dim, embed_dim, requires_grad=True) * 0.1
+            # W_Q = torch.randn(tf_dim, embed_dim, requires_grad=True) * (1./tf_dim**0.5)
+            # W_K = torch.randn(tf_dim, embed_dim, requires_grad=True) * (1./tf_dim**0.5)
+            # W_V = torch.rand(v_dim, embed_dim, requires_grad=True) * 0.1
+            W_Q = torch.randn(tf_dim, embed_dim, requires_grad=True) * (1./embed_dim**0.5)
+            W_K = torch.randn(tf_dim, embed_dim, requires_grad=True) * (1./embed_dim**0.5)
+            W_V = torch.rand(v_dim, embed_dim, requires_grad=True) * (1./embed_dim**0.5)
             self.q_project.weight.copy_(W_Q)
             self.k_project.weight.copy_(W_K)
             self.v_project.weight.copy_(W_V)
@@ -322,8 +325,8 @@ def train_tf_batchmode(model, full_seq_len, dataset_params, criterion,
         # visualize learned Q, K, V weights and covariance matrices at the end of training
         if (i == num_batches-1):
             wv, qk_submat = visualize_QKV_matrices(model, 'tf', label='', plot_mode=plot_mode, W_V_lims=[-0.2, 1.2, 0.2], QK_lims=[-2, 5, 1])
-            W_K = model.self_attn.k_project.weight.data
-            ul_cov = visualize_uppercase_lowercase_covariance(num_letters, W_K, label='', plot_mode=plot_mode, KK_lims=[-2, 4, 1], full=full_key_covar)
+            # W_K = model.self_attn.k_project.weight.data
+            # ul_cov = visualize_uppercase_lowercase_covariance(num_letters, W_K, label='', plot_mode=plot_mode, KK_lims=[-2, 4, 1], full=full_key_covar)
 
 
     return batch_losses, batch_accs, wv, ul_cov, qk_submat
@@ -418,11 +421,11 @@ def compare_manual_vs_automatic_tf_training(model_params, full_seq_len, dataset_
 
 
 if __name__ == "__main__":
-    num_letters = 26
-    tf_dim = 64
-    C = 26
+    num_letters = 4
+    tf_dim = 32
+    C = 4
     auto_losses, auto_accs, manual_losses, manual_accs = compare_manual_vs_automatic_tf_training((3*num_letters, tf_dim, 2), C+1, ['case_sequence', num_letters], mse_loss,
-                                                num_batches=5_000, batch_size=64, lr=1e-2, toy_task_mode=False,
+                                                num_batches=5_000, batch_size=64, lr=1e-3, toy_task_mode=False,
                                                 reduced=False, freeze_K=False, device=torch.device('cpu'))
 
     # plot
