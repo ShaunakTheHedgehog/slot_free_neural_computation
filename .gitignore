@@ -40,3 +40,15 @@ correlated_data_tests/
 # Slurm job logs
 slurm-*.out
 *.err
+
+# Plots / figures / run outputs
+*.pdf
+*.svg
+*.eps
+*.jpg
+*.jpeg
+plots/
+figures/
+results/
+smoke*/
+*.log
