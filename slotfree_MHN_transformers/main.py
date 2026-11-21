@@ -257,20 +257,20 @@ def demo():
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(device)
 
-    num_letters = 4
-    full_seq_len = 5
-    k_dim = 32
-    tf_dim = 8
+    num_letters = 26
+    full_seq_len = 27
+    k_dim = 64
+    tf_dim = 26
     input_proj_strength = 1.0
     debug_mode = True
-    item_in_mhn = False
+    item_in_mhn = True
     criterion = mse_loss
     num_batches = 5_000
     batch_size = 64
-    lr = 1e-3
-    K_lr = 1e-4
+    lr = 1e-2
+    K_lr = None # 1e-4
     freeze_K = False
-    K_grad_type = 'supervised'
+    K_grad_type = 'supervised' # 'supervised' # 'through_MHN' # 'none'
     WV_train_mode = 'via_reinstatement'
     input_dim = 3 * num_letters
     output_dim = 2
@@ -295,7 +295,7 @@ def demo():
     batch_losses, batch_accs, wv, ul_cov, qk_submat, _, _, _ = train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
                                  num_batches=num_batches, batch_size=batch_size, lr=lr,
                                  freeze_K=freeze_K, freeze_Q=False, freeze_V=False,
-                                 manual_grad_calc=True, plot_mode=True, full_key_covar=True,
+                                 manual_grad_calc=False, plot_mode=True, full_key_covar=True,
                                  device=device, K_grad_type=K_grad_type, WV_train_mode=WV_train_mode, K_lr=K_lr, print_display=True)
 
     print('done!')

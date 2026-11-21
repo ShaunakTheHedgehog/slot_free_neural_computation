@@ -10,13 +10,16 @@
 # Or submit any config file manually from slotfree_MHN_transformers/:
 #   CONFIG=slurm/configs/main_L4.txt
 #   mkdir -p slurm/logs
-#   sbatch --array=1-$(grep -cvE '^\s*(#|$)' $CONFIG) slurm/run.slurm $CONFIG
+#   sbatch --array=1-$(grep -cvE '^\s*(#|$)' $CONFIG) slurm/run.slurm $CONFIG [extra main.py args...]
+# Any arguments after the config file are appended to every line (the launchers use
+# this to set --results_root). The launchers also override --output/--error.
 #
 #SBATCH --job-name=mhn-tf
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=2G
 #SBATCH --time=12:00:00               # enough for L=26; override with --time for smaller runs
 #SBATCH --output=slurm/logs/%x_%A_%a.out
+#SBATCH --error=slurm/logs/%x_%A_%a.err
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --mail-type=BEGIN,END,FAIL                 # Email notifications
@@ -24,6 +27,8 @@
 
 set -eo pipefail
 CONFIG=$1
+shift
+EXTRA_ARGS=("$@")                # appended to every config line
 
 cd "$SLURM_SUBMIT_DIR"
 
@@ -37,5 +42,5 @@ eval "$(conda shell.bash hook)" && conda activate slotfree-mhn-tf
 # headless plotting, no progress-bar spam in the logs, one thread per CPU
 export MPLBACKEND=Agg TQDM_DISABLE=1 OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
-echo "[task $SLURM_ARRAY_TASK_ID] $(hostname)  python main.py ${ARGS[*]}"
-python main.py "${ARGS[@]}"
+echo "[task $SLURM_ARRAY_TASK_ID] $(hostname)  python main.py ${ARGS[*]} ${EXTRA_ARGS[*]}"
+python main.py "${ARGS[@]}" "${EXTRA_ARGS[@]}"
