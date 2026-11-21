@@ -324,9 +324,9 @@ def train_tf_batchmode(model, full_seq_len, dataset_params, criterion,
 
         # visualize learned Q, K, V weights and covariance matrices at the end of training
         if (i == num_batches-1):
-            wv, qk_submat = visualize_QKV_matrices(model, 'tf', label='', plot_mode=plot_mode, W_V_lims=[-0.2, 1.2, 0.2], QK_lims=[-2, 5, 1])
-            # W_K = model.self_attn.k_project.weight.data
-            # ul_cov = visualize_uppercase_lowercase_covariance(num_letters, W_K, label='', plot_mode=plot_mode, KK_lims=[-2, 4, 1], full=full_key_covar)
+            wv, qk_submat = visualize_QKV_matrices(model, 'tf', label='', plot_mode=plot_mode)
+            W_K = model.self_attn.k_project.weight.data
+            ul_cov = visualize_uppercase_lowercase_covariance(num_letters, W_K, label='', plot_mode=plot_mode, full=full_key_covar)
 
 
     return batch_losses, batch_accs, wv, ul_cov, qk_submat

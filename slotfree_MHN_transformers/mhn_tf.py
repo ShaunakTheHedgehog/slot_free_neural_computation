@@ -472,8 +472,8 @@ def train_mhn_tf_model_batchmode(model, full_seq_len, dataset_params, criterion,
         
         # visualize learned Q, K, V weights and covariance matrices at the end of training
         if (i==num_batches-1):
-            wv, qk_submat = visualize_QKV_matrices(model, 'mhn_tf', label='', plot_mode=plot_mode, W_V_lims=[0., 1., 0.2], QK_lims=[-2., 8., 2])
-            ul_cov = visualize_uppercase_lowercase_covariance(num_letters, model.W_K.weight.data, '', plot_mode=plot_mode, KK_lims=[-2., 8., 2], full=full_key_covar)
+            wv, qk_submat = visualize_QKV_matrices(model, 'mhn_tf', label='', plot_mode=plot_mode)
+            ul_cov = visualize_uppercase_lowercase_covariance(num_letters, model.W_K.weight.data, '', plot_mode=plot_mode, full=full_key_covar)
 
     return batch_losses, batch_accs, wv, ul_cov, qk_submat, Q_losses, K_losses, V_losses
 
