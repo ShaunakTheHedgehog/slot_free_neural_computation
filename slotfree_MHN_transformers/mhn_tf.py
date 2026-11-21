@@ -244,7 +244,7 @@ class OneWinnerMHNLayer(nn.Module):
             # v_weights = torch.rand(v_dim, input_dim) * 0.1
             q_weights = torch.randn(k_dim, input_dim) * (init_coeff/input_dim**0.5)
             k_weights = torch.randn(k_dim, input_dim) * (init_coeff/input_dim**0.5)
-            v_weights = torch.rand(v_dim, input_dim) * (init_coeff/input_dim**0.5)
+            v_weights = torch.randn(v_dim, input_dim) * (init_coeff/input_dim**0.5)
 
             self.W_Q.weight.copy_(q_weights)
             self.W_K.weight.copy_(k_weights)

@@ -94,7 +94,7 @@ class Attention(nn.Module):
             # W_V = torch.rand(v_dim, embed_dim, requires_grad=True) * 0.1
             W_Q = torch.randn(tf_dim, embed_dim, requires_grad=True) * (1./embed_dim**0.5)
             W_K = torch.randn(tf_dim, embed_dim, requires_grad=True) * (1./embed_dim**0.5)
-            W_V = torch.rand(v_dim, embed_dim, requires_grad=True) * (1./embed_dim**0.5)
+            W_V = torch.randn(v_dim, embed_dim, requires_grad=True) * (1./embed_dim**0.5)
             self.q_project.weight.copy_(W_Q)
             self.k_project.weight.copy_(W_K)
             self.v_project.weight.copy_(W_V)
